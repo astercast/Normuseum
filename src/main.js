@@ -56,7 +56,7 @@ renderer.outputColorSpace        = THREE.SRGBColorSpace;
 renderer.toneMapping             = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure     = 1.05;
 renderer.shadowMap.enabled       = true;
-renderer.shadowMap.type          = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type          = THREE.PCFShadowMap;
 
 /* ── Scene ────────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
@@ -519,24 +519,102 @@ function playButtonClick() {
 }
 
 /* ── API calls ────────────────────────────────────────────────────────────── */
+const RPC_URLS = [
+  "https://cloudflare-eth.com",
+  "https://rpc.ankr.com/eth",
+  "https://eth.llamarpc.com",
+  "https://ethereum.publicnode.com",
+];
+const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
+async function rpcCall(method, params) {
+  for (var i = 0; i < RPC_URLS.length; i++) {
+    try {
+      var res = await fetch(RPC_URLS[i], {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: method, params: params }),
+      });
+      var json = await res.json();
+      if (json.result !== undefined) return json.result;
+    } catch (e) { /* try next */ }
+  }
+  throw new Error("all RPCs failed");
+}
+
+function encodeOwnerOf(tokenId) {
+  // ownerOf(uint256) selector = 0x6352211e
+  return "0x6352211e" + tokenId.toString(16).padStart(64, "0");
+}
+
+function encodeMulticall(calls) {
+  // aggregate3(Call3[]) selector = 0x82ad56cb
+  // Call3 = (address target, bool allowFailure, bytes callData)
+  var offset = 64; // offset to dynamic array
+  var countHex = calls.length.toString(16).padStart(64, "0");
+  var items = "";
+  var datas = "";
+  var dataOffset = calls.length * 96; // each tuple is 3*32 = 96 bytes in head
+  for (var i = 0; i < calls.length; i++) {
+    var callData = calls[i].data.slice(2); // remove 0x
+    var callDataLen = callData.length / 2;
+    // target (address)
+    items += calls[i].target.slice(2).toLowerCase().padStart(64, "0");
+    // allowFailure (bool) = true
+    items += "0000000000000000000000000000000000000000000000000000000000000001";
+    // offset to callData (relative to start of tuple array)
+    items += (dataOffset + datas.length / 2).toString(16).padStart(64, "0");
+    // callData: length + padded data
+    datas += callDataLen.toString(16).padStart(64, "0");
+    datas += callData + "0".repeat((64 - (callData.length % 64)) % 64);
+  }
+  return "0x82ad56cb" +
+    offset.toString(16).padStart(64, "0") +
+    countHex +
+    items +
+    datas;
+}
+
+function decodeMulticallResult(hex) {
+  // Returns array of { success: bool, data: string }
+  var d = hex.slice(2);
+  var arrayOffset = parseInt(d.slice(0, 64), 16) * 2;
+  var count = parseInt(d.slice(arrayOffset, arrayOffset + 64), 16);
+  var results = [];
+  var tupleStart = arrayOffset + 64;
+  for (var i = 0; i < count; i++) {
+    var entryOffset = parseInt(d.slice(tupleStart + i * 64, tupleStart + i * 64 + 64), 16) * 2;
+    var absOffset = tupleStart + entryOffset;
+    var success = parseInt(d.slice(absOffset, absOffset + 64), 16) === 1;
+    var dataOffset2 = parseInt(d.slice(absOffset + 64, absOffset + 128), 16) * 2;
+    var dataLen = parseInt(d.slice(absOffset + dataOffset2, absOffset + dataOffset2 + 64), 16);
+    var data = "0x" + d.slice(absOffset + dataOffset2 + 64, absOffset + dataOffset2 + 64 + dataLen * 2);
+    results.push({ success: success, data: data });
+  }
+  return results;
+}
+
 async function fetchOwnedTokenIds(address) {
-  const ids = [];
-  let cont = null;
-  do {
-    const base = "https://api.reservoir.tools/users/" + address +
-      "/tokens/v7?collection=" + NORMIES_CONTRACT +
-      "&limit=200&sortBy=acquiredAt&sortDirection=desc";
-    const url = cont ? base + "&continuation=" + encodeURIComponent(cont) : base;
-    const res = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
-    if (!res.ok) throw new Error("reservoir " + res.status);
-    const data = await res.json();
-    for (const e of data.tokens || []) {
-      const id = parseInt(e?.token?.tokenId ?? "", 10);
-      if (!isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
+  var owned = [];
+  var addrLower = address.toLowerCase();
+  var BATCH = 1000;
+  for (var start = 0; start < 10000; start += BATCH) {
+    var calls = [];
+    for (var t = start; t < start + BATCH && t < 10000; t++) {
+      calls.push({ target: NORMIES_CONTRACT, data: encodeOwnerOf(t) });
     }
-    cont = data.continuation || null;
-  } while (cont);
-  return [...new Set(ids)];
+    var encoded = encodeMulticall(calls);
+    var result = await rpcCall("eth_call", [{ to: MULTICALL3, data: encoded }, "latest"]);
+    var decoded = decodeMulticallResult(result);
+    for (var j = 0; j < decoded.length; j++) {
+      if (decoded[j].success && decoded[j].data.length >= 42) {
+        var owner = "0x" + decoded[j].data.slice(26, 66).toLowerCase();
+        if (owner === addrLower) owned.push(start + j);
+      }
+    }
+    setStatus("scanning wallet\u2026 " + Math.min(start + BATCH, 10000) + " / 10000");
+  }
+  return owned;
 }
 
 async function fetchTokenMeta(tokenId) {
@@ -924,9 +1002,10 @@ function easeOutBack(t) {
 }
 
 /* ── Render loop ──────────────────────────────────────────────────────────── */
-var clock = new THREE.Clock();
+var clock = new THREE.Timer();
 function animate() {
   requestAnimationFrame(animate);
+  clock.update();
   var dt = Math.min(clock.getDelta(), 0.05);
   var shouldMove = isTouch ? inMuseum : (controls && controls.isLocked);
   if (shouldMove) move(dt);
