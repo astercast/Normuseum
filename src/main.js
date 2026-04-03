@@ -1040,7 +1040,7 @@ function playFootstep() {
 /* ── Background music ─────────────────────────────────────────────────────── */
 var bgMusic = null, musicPlaying = false;
 var musicBtn = $("musicBtn");
-function initMusic() { if (bgMusic) return; bgMusic = new Audio("./bgmusic.mp3"); bgMusic.loop = true; bgMusic.volume = 0.25; }
+function initMusic() { if (bgMusic) return; bgMusic = new Audio("./bgmusic.mp3"); bgMusic.loop = true; bgMusic.volume = musicVolume; }
 function toggleMusic() {
   initMusic();
   if (musicPlaying) { bgMusic.pause(); musicPlaying = false; }
@@ -1049,7 +1049,57 @@ function toggleMusic() {
   var stateEl = $("musicState");
   if (stateEl) stateEl.textContent = musicPlaying ? "on" : "off";
 }
-if (musicBtn) musicBtn.addEventListener("click", toggleMusic);
+if (musicBtn) musicBtn.addEventListener("click", function(e) {
+  var panel = $("audioPanel");
+  if (panel) { panel.classList.toggle("visible"); e.stopPropagation(); }
+});
+
+/* ── Audio panel wiring ───────────────────────────────────────────────────── */
+var audioPanelEl = $("audioPanel");
+var musicToggleEl = $("musicToggleBtn");
+var musicSlider = $("musicVolumeSlider");
+var sfxSlider = $("sfxVolumeSlider");
+if (musicToggleEl) musicToggleEl.addEventListener("click", toggleMusic);
+if (musicSlider) {
+  musicSlider.value = musicVolume * 100;
+  musicSlider.addEventListener("input", function() {
+    musicVolume = this.value / 100;
+    if (bgMusic) bgMusic.volume = musicVolume;
+  });
+}
+if (sfxSlider) {
+  sfxSlider.value = sfxVolume * 100;
+  sfxSlider.addEventListener("input", function() {
+    sfxVolume = this.value / 100;
+    if (slurpAudio) slurpAudio.volume = sfxVolume * 0.7;
+  });
+}
+document.addEventListener("click", function(e) {
+  if (audioPanelEl && audioPanelEl.classList.contains("visible")) {
+    if (!audioPanelEl.contains(e.target) && e.target !== musicBtn) audioPanelEl.classList.remove("visible");
+  }
+});
+
+/* ── Slurp sound near art ─────────────────────────────────────────────────── */
+function initSlurp() { if (slurpAudio) return; slurpAudio = new Audio("./slurp.mp3"); slurpAudio.volume = sfxVolume * 0.7; }
+function checkSlurpProximity(dt) {
+  if (slurpCooldown > 0) { slurpCooldown -= dt; return; }
+  var px = camera.position.x, pz = camera.position.z;
+  for (var i = 0; i < artGroup.children.length; i++) {
+    var a = artGroup.children[i];
+    if (!a.userData || a.userData.revealT === undefined) continue;
+    if (a.userData.revealing) continue;
+    var dx = px - a.position.x, dz = pz - a.position.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < SLURP_DISTANCE) {
+      initSlurp();
+      slurpAudio.currentTime = 0;
+      slurpAudio.play().catch(function() {});
+      slurpCooldown = SLURP_COOLDOWN;
+      return;
+    }
+  }
+}
 
 /* ── Pointer lock (desktop) ───────────────────────────────────────────────── */
 if (!isTouch && controls) {
