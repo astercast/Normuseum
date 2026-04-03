@@ -346,6 +346,14 @@ body::before {
   transition: color 0.15s, border-color 0.15s;
 }
 .hud-btn:hover { color: var(--text); border-color: var(--text); }
+
+/* Music toggle */
+.music-icon--on { display: none; }
+.music-icon--off { display: block; }
+.music-active .music-icon--on { display: block; }
+.music-active .music-icon--off { display: none; }
+.music-active { color: var(--text); border-color: var(--text); }
+
 .fs-icon--exit { display: none; }
 .fs-icon--enter { display: block; }
 :fullscreen .fs-icon--exit,

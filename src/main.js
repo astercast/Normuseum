@@ -206,57 +206,101 @@ function buildGallery(count) {
   });
 
   // Wainscoting cap rail (chair rail)
-  var railGeo2 = new THREE.BoxGeometry(currentRoomLen + 0.2, 0.05, 0.06);
+  var railGeo2 = new THREE.BoxGeometry(0.06, 0.05, currentRoomLen + 0.2);
   [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
     var r = new THREE.Mesh(railGeo2, mouldMat);
-    r.position.set(0, wainH, x);
+    r.position.set(x, wainH, 0);
     galleryGroup.add(r);
   });
 
   // ── Crown moulding (ornate) ──
-  var crownProf = new THREE.BoxGeometry(currentRoomLen + 0.4, 0.12, 0.14);
+  var crownProf = new THREE.BoxGeometry(0.14, 0.12, currentRoomLen + 0.4);
   [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
     var m = new THREE.Mesh(crownProf, mouldMat);
-    m.position.set(0, ROOM_H - 0.06, x);
+    m.position.set(x, ROOM_H - 0.06, 0);
     galleryGroup.add(m);
   });
   // Secondary crown step
-  var crownStep = new THREE.BoxGeometry(currentRoomLen + 0.3, 0.06, 0.08);
+  var crownStep = new THREE.BoxGeometry(0.08, 0.06, currentRoomLen + 0.3);
   [-WALL_X + 0.04, WALL_X - 0.04].forEach(function(x) {
     var m = new THREE.Mesh(crownStep, mouldMat);
-    m.position.set(0, ROOM_H - 0.15, x);
+    m.position.set(x, ROOM_H - 0.15, 0);
     galleryGroup.add(m);
   });
 
   // ── Picture rail ──
-  var picRailGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.035, 0.05);
+  var picRailGeo = new THREE.BoxGeometry(0.05, 0.035, currentRoomLen + 0.1);
   [-WALL_X + 0.025, WALL_X - 0.025].forEach(function(x) {
     var r = new THREE.Mesh(picRailGeo, mouldMat);
-    r.position.set(0, 3.1, x);
+    r.position.set(x, 3.1, 0);
     galleryGroup.add(r);
   });
 
   // ── Baseboard ──
-  var skirtGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.22, 0.06);
+  var skirtGeo = new THREE.BoxGeometry(0.06, 0.22, currentRoomLen + 0.1);
   [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
     var s = new THREE.Mesh(skirtGeo, baseMat);
-    s.position.set(0, 0.11, x);
+    s.position.set(x, 0.11, 0);
     galleryGroup.add(s);
   });
 
-  // ── Ceiling coffers with depth ──
-  var cofferBarMat = new THREE.MeshStandardMaterial({ color: "#f0ece4", roughness: 0.88 });
-  for (var zc = -HL + 5; zc < HL; zc += 4.8) {
-    // Main beam
-    var beam = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.6, 0.08, 0.12), cofferBarMat);
-    beam.position.set(0, ROOM_H - 0.04, zc);
-    galleryGroup.add(beam);
-    // Center spine
-    if (zc < HL - 3) {
-      var spine = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 4.6), cofferBarMat);
-      spine.position.set(0, ROOM_H - 0.03, zc + 2.4);
-      galleryGroup.add(spine);
-    }
+  // ── Subtle ceiling edge trim ──
+  var ceilTrimMat = new THREE.MeshStandardMaterial({ color: "#ece8e0", roughness: 0.9 });
+  var ceilTrimGeo = new THREE.BoxGeometry(0.06, 0.04, currentRoomLen + 0.2);
+  [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
+    var t = new THREE.Mesh(ceilTrimGeo, ceilTrimMat);
+    t.position.set(x, ROOM_H - 0.02, 0);
+    galleryGroup.add(t);
+  });
+
+  // ── Skylights — glass panels in ceiling showing blue sky with clouds ──
+  var skyCanvas = document.createElement("canvas");
+  skyCanvas.width = 512; skyCanvas.height = 256;
+  var skyCtx = skyCanvas.getContext("2d");
+  // Gradient sky
+  var grad = skyCtx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, "#5da0d4");
+  grad.addColorStop(0.55, "#87c4eb");
+  grad.addColorStop(1, "#bde0f5");
+  skyCtx.fillStyle = grad;
+  skyCtx.fillRect(0, 0, 512, 256);
+  // Fluffy clouds
+  skyCtx.fillStyle = "rgba(255,255,255,0.85)";
+  [[80,120,90,40],[200,90,120,50],[350,130,80,35],[420,70,100,45],[150,160,70,30],[300,50,60,28],[60,60,50,22],[450,150,75,32]].forEach(function(c) {
+    skyCtx.beginPath();
+    skyCtx.ellipse(c[0], c[1], c[2], c[3], 0, 0, Math.PI * 2);
+    skyCtx.fill();
+  });
+  skyCtx.fillStyle = "rgba(255,255,255,0.6)";
+  [[130,100,60,25],[260,110,50,22],[380,80,70,30],[100,150,45,18]].forEach(function(c) {
+    skyCtx.beginPath();
+    skyCtx.ellipse(c[0], c[1], c[2], c[3], 0, 0, Math.PI * 2);
+    skyCtx.fill();
+  });
+  var skyTex = new THREE.CanvasTexture(skyCanvas);
+  skyTex.colorSpace = THREE.SRGBColorSpace;
+  var skyMat = new THREE.MeshBasicMaterial({ map: skyTex });
+  var frameTrimMat = new THREE.MeshStandardMaterial({ color: "#d4cec2", roughness: 0.6, metalness: 0.15 });
+  var skylightSpacing = 9;
+  var skylightCount = Math.max(1, Math.floor((currentRoomLen - 10) / skylightSpacing));
+  for (var ski = 0; ski < skylightCount; ski++) {
+    var sz = -HL + 8 + ski * skylightSpacing;
+    // Glass pane (sky texture)
+    var pane = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.8), skyMat);
+    pane.rotation.x = Math.PI / 2;
+    pane.position.set(0, ROOM_H - 0.01, sz);
+    galleryGroup.add(pane);
+    // Trim frame around skylight
+    var trimW = 0.1;
+    [[0, -0.95, 3.4, trimW], [0, 0.95, 3.4, trimW], [-1.65, 0, trimW, 2.0], [1.65, 0, trimW, 2.0]].forEach(function(t) {
+      var trim = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.06, t[3]), frameTrimMat);
+      trim.position.set(t[0], ROOM_H - 0.02, sz + t[1]);
+      galleryGroup.add(trim);
+    });
+    // Skylight glow light (cool daylight from above)
+    var skyLight = new THREE.PointLight(0xc4dff0, 0.5, 8);
+    skyLight.position.set(0, ROOM_H - 0.1, sz);
+    galleryGroup.add(skyLight);
   }
 
   // ── Artwork spotlights (RectAreaLight per side, warm museum lighting) ──
@@ -412,8 +456,29 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.castShadow = inst.receiveShadow = true;
+    inst.userData.isVoxel = true;
     group.add(inst);
   }
+
+  // Flat 2D painting for framed mode — draw the normie pixels onto a canvas texture
+  var flatCanvas = document.createElement("canvas");
+  flatCanvas.width = GRID; flatCanvas.height = GRID;
+  var flatCtx = flatCanvas.getContext("2d");
+  var imgData = flatCtx.createImageData(GRID, GRID);
+  imgData.data.set(rgbaData);
+  flatCtx.putImageData(imgData, 0, 0);
+  var flatTex = new THREE.CanvasTexture(flatCanvas);
+  flatTex.magFilter = THREE.NearestFilter;
+  flatTex.minFilter = THREE.NearestFilter;
+  flatTex.colorSpace = THREE.SRGBColorSpace;
+  var flatPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(ART_W, ART_H),
+    new THREE.MeshStandardMaterial({ map: flatTex, roughness: 0.6, metalness: 0.05 })
+  );
+  flatPlane.position.z = 0.005;
+  flatPlane.userData.isFlat = true;
+  flatPlane.visible = framesVisible;
+  group.add(flatPlane);
 
   // Nameplate
   const labelTex = makeLabelTex(tokenId, meta.type || "human", meta.ap);
@@ -574,10 +639,12 @@ function updateInteractionHint(show) {
 function pressButton() {
   if (!podiumBtnMesh || btnAnimating) return;
   framesVisible = !framesVisible;
-  // Toggle ALL frame elements across all artworks
+  // Toggle between voxel mode (frameless) and framed flat-art mode
   for (var ai = 0; ai < artGroup.children.length; ai++) {
     artGroup.children[ai].traverse(function(child) {
-      if (child.userData && child.userData.isFrame) child.visible = framesVisible;
+      if (!child.userData) return;
+      if (child.userData.isFrame || child.userData.isFlat) child.visible = framesVisible;
+      if (child.userData.isVoxel) child.visible = !framesVisible;
     });
   }
   btnAnimating = true;
@@ -902,8 +969,8 @@ function playFootstep() {
   filter.frequency.setValueAtTime(200, now);
   filter.Q.setValueAtTime(0.7, now);
 
-  gain.gain.setValueAtTime(0.06, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  gain.gain.setValueAtTime(0.018, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
 
   osc.connect(filter);
   filter.connect(gain);
@@ -911,6 +978,32 @@ function playFootstep() {
   osc.start(now);
   osc.stop(now + 0.12);
 }
+
+/* ── Background music ─────────────────────────────────────────────────────── */
+var bgMusic = null;
+var musicPlaying = false;
+var musicBtn = $("musicBtn");
+
+function initMusic() {
+  if (bgMusic) return;
+  bgMusic = new Audio("./bgmusic.mp3");
+  bgMusic.loop = true;
+  bgMusic.volume = 0.25;
+}
+
+function toggleMusic() {
+  initMusic();
+  if (musicPlaying) {
+    bgMusic.pause();
+    musicPlaying = false;
+  } else {
+    bgMusic.play().catch(function() {});
+    musicPlaying = true;
+  }
+  if (musicBtn) musicBtn.classList.toggle("music-active", musicPlaying);
+}
+
+if (musicBtn) musicBtn.addEventListener("click", toggleMusic);
 
 /* ── Pointer lock (desktop) ───────────────────────────────────────────────── */
 if (!isTouch && controls) {
@@ -934,6 +1027,7 @@ if (!isTouch) {
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
     if (e.code === "KeyF" && inMuseum) toggleFullscreen();
     if (e.code === "KeyE" && inMuseum) tryInteract();
+    if (e.code === "KeyM" && inMuseum) toggleMusic();
   });
   window.addEventListener("keyup", function(e) {
     if (e.code === "KeyW") keys.w = false;
