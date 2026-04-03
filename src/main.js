@@ -22,7 +22,6 @@ const canvasEl      = document.getElementById("scene");
 const overlayEl     = document.getElementById("overlay");
 const hudEl         = document.getElementById("hud");
 const hudMetaEl     = document.getElementById("hud-meta");
-const connectBtn    = document.getElementById("connectBtn");
 const walletInput   = document.getElementById("walletInput");
 const loadBtn       = document.getElementById("loadBtn");
 const exitBtn       = document.getElementById("exitBtn");
@@ -451,12 +450,19 @@ function setProgress(done, total, label) {
   progressWrap.classList.toggle("visible", done < total);
 }
 
-// ─── Resolve / validate wallet address ──────────────────────────────────────
-function resolveAddress(input) {
-  const v = input.trim();
-  if (!v) throw new Error("Wallet input is empty");
-  if (!/^0x[a-fA-F0-9]{40}$/.test(v)) throw new Error("Invalid 0x wallet address");
-  return v;
+// ─── Resolve a single address or ENS name → 0x ────────────────────────────────────
+async function resolveAddress(raw) {
+  const v = raw.trim();
+  if (!v) throw new Error("empty entry");
+  if (/^0x[a-fA-F0-9]{40}$/i.test(v)) return v.toLowerCase();
+  // ENS or other name — public resolver, no API key required
+  const res = await fetch(`https://api.ensideas.com/ens/resolve/${encodeURIComponent(v)}`);
+  if (!res.ok) throw new Error(`could not resolve “${v}”`);
+  const data = await res.json();
+  if (!data?.address || !/^0x[a-fA-F0-9]{40}$/i.test(data.address)) {
+    throw new Error(`no address found for “${v}”`);
+  }
+  return data.address.toLowerCase();
 }
 
 // ─── Enter / exit museum ────────────────────────────────────────────────────
@@ -568,32 +574,21 @@ function setStatus(msg, isError = false) {
 }
 
 function setBusy(busy) {
-  connectBtn.disabled = busy;
-  loadBtn.disabled    = busy;
+  loadBtn.disabled     = busy;
   walletInput.disabled = busy;
 }
 
-// ─── Wallet connect ──────────────────────────────────────────────────────────
-async function connectWallet() {
-  if (!window.ethereum) {
-    setStatus("no injected wallet found — paste an address instead.", true);
-    return;
-  }
-  try {
-    setBusy(true);
-    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-    if (!accounts?.length) throw new Error("wallet returned no accounts");
-    walletInput.value = accounts[0];
-    await loadMuseumForAddress(accounts[0]);
-  } catch (err) {
-    setStatus(`wallet connect failed: ${err.message}`, true);
-    setBusy(false);
-  }
-}
+// ─── About modal ─────────────────────────────────────────────────────────────
+const aboutModal    = document.getElementById("about-modal");
+const aboutBtn      = document.getElementById("aboutBtn");
+const aboutCloseBtn = document.getElementById("aboutCloseBtn");
 
-connectBtn.addEventListener("click", connectWallet);
-loadBtn.addEventListener("click", () => loadMuseumForAddress(walletInput.value));
-walletInput.addEventListener("keydown", e => { if (e.key === "Enter") loadMuseumForAddress(walletInput.value); });
+aboutBtn.addEventListener("click", () => aboutModal.classList.remove("modal-hidden"));
+aboutCloseBtn.addEventListener("click", () => aboutModal.classList.add("modal-hidden"));
+aboutModal.addEventListener("click", e => { if (e.target === aboutModal) aboutModal.classList.add("modal-hidden"); });
+
+loadBtn.addEventListener("click", () => loadMuseumForWallets(walletInput.value));
+walletInput.addEventListener("keydown", e => { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
 
 // ─── Pointer lock ────────────────────────────────────────────────────────────
 renderer.domElement.addEventListener("click", () => { if (inMuseum) controls.lock(); });

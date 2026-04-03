@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
       rel="stylesheet"
     />
   </head>
@@ -24,6 +24,7 @@
       <nav id="nav">
         <span class="nav-brand">normuseum</span>
         <span class="nav-sub">voxel gallery · normies.art</span>
+        <button class="nav-link" id="aboutBtn">about</button>
         <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
         <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
       </nav>
@@ -32,17 +33,13 @@
       <div id="landing">
         <div class="landing-eyebrow">the museum</div>
         <h1 class="landing-title">normuseum</h1>
-        <p class="landing-desc">walk your normies collection in a first-person voxel gallery.<br>connect or paste a wallet to populate the walls.</p>
+        <p class="landing-desc">walk your normies collection in a first-person voxel gallery.<br>paste one or more wallets or ENS names to populate the walls.</p>
 
         <div class="input-row">
           <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
-            placeholder="0x wallet address" />
+            placeholder="0x… or vitalik.eth — separate multiple with commas" />
           <button id="loadBtn" class="btn-primary">enter museum</button>
         </div>
-
-        <div class="divider-row"><span>or</span></div>
-
-        <button id="connectBtn" class="btn-secondary">connect wallet</button>
 
         <div id="status" class="status-line"></div>
 
@@ -76,6 +73,45 @@
         <div id="progress-label"></div>
       </div>
 
+    </div>
+
+    <!-- ── ABOUT MODAL ── -->
+    <div id="about-modal" class="modal-backdrop modal-hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <div class="modal-card">
+        <button class="modal-close" id="aboutCloseBtn" aria-label="close">✕</button>
+
+        <div class="modal-eyebrow">about</div>
+        <h2 class="modal-title" id="about-title">normuseum</h2>
+
+        <p class="modal-body">
+          normuseum is a first-person 3D voxel gallery for the
+          <a href="https://normies.art" target="_blank" rel="noopener">Normies</a>
+          NFT collection on ethereum mainnet. paste any wallet address or ENS name
+          — multiple wallets supported, comma-separated — and walk through your
+          collection on the walls of a minimal white-cube gallery. each normie is
+          rendered as a high-quality voxel relief, with dark pixels physically
+          extruded from the canvas to create a tactile, sculptural effect.
+        </p>
+
+        <div class="modal-divider"></div>
+
+        <div class="modal-links">
+          <a class="modal-pill" href="https://normiesarchive.xyz" target="_blank" rel="noopener">
+            normiesarchive.xyz ↗
+            <span class="modal-pill-sub">pixel history explorer — also by aster0x</span>
+          </a>
+          <a class="modal-pill" href="https://x.com/aster0x" target="_blank" rel="noopener">
+            @aster0x on X ↗
+            <span class="modal-pill-sub">creator &amp; developer</span>
+          </a>
+          <a class="modal-pill" href="https://normies.art" target="_blank" rel="noopener">
+            normies.art ↗
+            <span class="modal-pill-sub">official collection</span>
+          </a>
+        </div>
+
+        <div class="modal-footer">10,000 on-chain faces · ethereum mainnet</div>
+      </div>
     </div>
 
     <!-- crosshair (shows only when pointer is locked) -->
