@@ -15,14 +15,19 @@ const ART_W = 2.4, ART_H = 2.4;
 const ROOM_W = 14, ROOM_H = 5.2;
 const SLOT_SPACING = 3.6;
 
-/* ── Multi-room layout constants ──────────────────────────────────────────── */
+/* ── Multi-room layout ────────────────────────────────────────────────────── */
 const NORMIES_PER_ROOM = 20;
 const SHIFT_X          = ROOM_W + 8;
 const CORR_Z           = 8;
 const CORR_W           = 4.5;
 const ROOM_PAD         = 5;
 
-/* ── Frame toggle state ───────────────────────────────────────────────────── */
+/* ── Room lifecycle (lazy loading) ────────────────────────────────────────── */
+const ROOM_BUILD_RANGE  = 2;
+const ROOM_ART_RANGE    = 1;
+const ROOM_UNLOAD_RANGE = 3;
+
+/* ── Frame toggle ─────────────────────────────────────────────────────────── */
 let framesVisible = false;
 let podiumBtnMesh = null;
 let buttonHovered = false;
@@ -37,7 +42,7 @@ var GROUND_Y = 1.7;
 
 /* ── Bench sitting ────────────────────────────────────────────────────────── */
 var isSitting = false;
-var benchPositions = [];   // {x, z} of each bench centre
+var benchPositions = [];
 var benchHovered = false;
 var nearBenchIdx = -1;
 
@@ -84,14 +89,37 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace        = THREE.SRGBColorSpace;
 renderer.toneMapping             = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure     = 1.15;
+renderer.toneMappingExposure     = 1.1;
 renderer.shadowMap.enabled       = true;
-renderer.shadowMap.type          = THREE.PCFShadowMap;
+renderer.shadowMap.type          = THREE.PCFSoftShadowMap;
 
-/* ── Scene ──────────────────────────────────────────────────────────────── */
+/* ── Scene ────────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#f0ede8");
-scene.fog = new THREE.FogExp2("#f0ede8", 0.018);
+scene.background = new THREE.Color("#eae6df");
+scene.fog = new THREE.FogExp2("#eae6df", 0.012);
+
+/* ── Environment map (warm studio for PBR reflections) ────────────────────── */
+(function generateEnvironment() {
+  var pmrem = new THREE.PMREMGenerator(renderer);
+  var envScene = new THREE.Scene();
+  envScene.background = new THREE.Color("#f5efe8");
+  var topLight = new THREE.DirectionalLight(0xfff8f0, 2.5);
+  topLight.position.set(0, 10, 0);
+  envScene.add(topLight);
+  var sideLight = new THREE.DirectionalLight(0xffeedd, 1.0);
+  sideLight.position.set(5, 3, 5);
+  envScene.add(sideLight);
+  envScene.add(new THREE.AmbientLight(0xffe8d0, 0.6));
+  var ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: "#ddd6cb" })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  envScene.add(ground);
+  var envRT = pmrem.fromScene(envScene, 0, 0.1, 100);
+  scene.environment = envRT.texture;
+  pmrem.dispose();
+})();
 
 /* ── Camera ───────────────────────────────────────────────────────────────── */
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 120);
@@ -108,30 +136,43 @@ if (!isTouch) {
 }
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0xfff8f0, 0.65));
-const sun = new THREE.DirectionalLight(0xfff0dd, 0.45);
+scene.add(new THREE.AmbientLight(0xfff8f0, 0.55));
+const sun = new THREE.DirectionalLight(0xfff0dd, 0.5);
 sun.position.set(5, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.far = 80;
+sun.shadow.camera.far = 60;
+sun.shadow.bias = -0.001;
 scene.add(sun);
-const fill = new THREE.HemisphereLight(0xfff8f0, 0xd4c4a8, 0.3);
-scene.add(fill);
+scene.add(new THREE.HemisphereLight(0xfff8f0, 0xd4c4a8, 0.35));
 
-/* ── Shared materials ─────────────────────────────────────────────────────── */
-const floorMat = new THREE.MeshStandardMaterial({ color: "#d8cfc0", roughness: 0.15, metalness: 0.1 });
-const wallMat  = new THREE.MeshStandardMaterial({ color: "#f5f2ed", roughness: 0.85 });
-const panelMat = new THREE.MeshStandardMaterial({ color: "#ede8e0", roughness: 0.7, metalness: 0.02 });
-const ceilMat  = new THREE.MeshStandardMaterial({ color: "#faf8f4", roughness: 0.92 });
-const mouldMat = new THREE.MeshStandardMaterial({ color: "#e8e2d8", roughness: 0.55, metalness: 0.08 });
-const baseMat  = new THREE.MeshStandardMaterial({ color: "#ddd6ca", roughness: 0.6, metalness: 0.05 });
-const frameMat = new THREE.MeshStandardMaterial({ color: "#b8a88c", roughness: 0.4, metalness: 0.15 });
+/* ── Shared materials (upgraded PBR) ──────────────────────────────────────── */
+const floorMat = new THREE.MeshPhysicalMaterial({
+  color: "#d4cbb8", roughness: 0.08, metalness: 0.12,
+  clearcoat: 0.3, clearcoatRoughness: 0.2, reflectivity: 0.5,
+});
+const wallMat  = new THREE.MeshStandardMaterial({ color: "#f0ece5", roughness: 0.88 });
+const panelMat = new THREE.MeshStandardMaterial({ color: "#e6e0d6", roughness: 0.72, metalness: 0.02 });
+const ceilMat  = new THREE.MeshStandardMaterial({ color: "#faf8f4", roughness: 0.94 });
+const mouldMat = new THREE.MeshStandardMaterial({ color: "#ddd6c8", roughness: 0.4, metalness: 0.1 });
+const baseMat  = new THREE.MeshStandardMaterial({ color: "#d6cfc2", roughness: 0.55, metalness: 0.06 });
+const frameMat = new THREE.MeshStandardMaterial({ color: "#9c8a6e", roughness: 0.3, metalness: 0.25 });
 const backMat  = new THREE.MeshStandardMaterial({ color: "#faf8f5", roughness: 0.95 });
 const placeMat = new THREE.MeshStandardMaterial({ color: "#eae6df", roughness: 0.95 });
-const benchMat = new THREE.MeshStandardMaterial({ color: "#3a3530", roughness: 0.55, metalness: 0.1 });
-const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#5c5448", roughness: 0.7 });
-const corrFloorMat = new THREE.MeshStandardMaterial({ color: "#c4b8a4", roughness: 0.2, metalness: 0.12 });
-const archMat = new THREE.MeshStandardMaterial({ color: "#d4cec2", roughness: 0.5, metalness: 0.1 });
+const benchMat = new THREE.MeshStandardMaterial({ color: "#2e2a24", roughness: 0.5, metalness: 0.15 });
+const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#4a4238", roughness: 0.65, metalness: 0.05 });
+const corrFloorMat = new THREE.MeshPhysicalMaterial({
+  color: "#bfb29c", roughness: 0.06, metalness: 0.15,
+  clearcoat: 0.35, clearcoatRoughness: 0.15, reflectivity: 0.55,
+});
+const archMat  = new THREE.MeshStandardMaterial({ color: "#cec8ba", roughness: 0.45, metalness: 0.12 });
+const inlayMat = new THREE.MeshStandardMaterial({ color: "#a8997f", roughness: 0.15, metalness: 0.18 });
+const beamMat  = new THREE.MeshStandardMaterial({ color: "#ede8e0", roughness: 0.7, metalness: 0.04 });
+const trimMat  = new THREE.MeshStandardMaterial({ color: "#cec8ba", roughness: 0.5, metalness: 0.18 });
+
+/* ── Shared geometries (reduces GC churn) ─────────────────────────────────── */
+const sharedVoxelGeo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+const sharedPlaceholderGeo = new THREE.BoxGeometry(2.32, 2.32, 0.04);
 
 /* ── Gallery + art groups ─────────────────────────────────────────────────── */
 const galleryGroup = new THREE.Group();
@@ -165,7 +206,7 @@ function planLayout(totalCount) {
       cx: cx, zStart: zStart, zEnd: zEnd, roomLen: roomLen,
       slotsPerSide: slotsPerSide, slotOffset: slotsUsed, slotCount: count,
       built: false, loaded: false, loading: false,
-      group: null, artSlots: [],
+      group: null, corridorGroup: null, artSlots: [],
     });
 
     walkZones.push({
@@ -180,13 +221,10 @@ function planLayout(totalCount) {
       var corrZMid = zEnd - CORR_Z / 2;
       var nextZStart = zEnd - CORR_Z;
 
-      // Corridor segment 1: straight from room exit
       walkZones.push({ minX: cx - CORR_W / 2, maxX: cx + CORR_W / 2, minZ: corrZMid - 1, maxZ: zEnd + 1 });
-      // Corridor segment 2: sideways
       var segMinX = Math.min(cx, nextCx) - CORR_W / 2;
       var segMaxX = Math.max(cx, nextCx) + CORR_W / 2;
       walkZones.push({ minX: segMinX, maxX: segMaxX, minZ: corrZMid - CORR_W / 2, maxZ: corrZMid + CORR_W / 2 });
-      // Corridor segment 3: straight into next room
       walkZones.push({ minX: nextCx - CORR_W / 2, maxX: nextCx + CORR_W / 2, minZ: nextZStart - 1, maxZ: corrZMid + 1 });
 
       zCursor = nextZStart;
@@ -229,35 +267,47 @@ function buildRoom(ri) {
   var zMid = (room.zStart + room.zEnd) / 2;
   var WALL_X = ROOM_W / 2;
 
-  // Floor
+  /* Floor */
   var floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(cx, 0, zMid); floor.receiveShadow = true;
   g.add(floor);
 
-  // Floor inlay
-  var inlayMat = new THREE.MeshStandardMaterial({ color: "#b0a590", roughness: 0.2, metalness: 0.15 });
+  /* Floor inlay strips */
   [-WALL_X + 0.9, WALL_X - 0.9].forEach(function(lx) {
     var strip = new THREE.Mesh(new THREE.PlaneGeometry(0.06, room.roomLen - 1.5), inlayMat);
     strip.rotation.x = -Math.PI / 2; strip.position.set(cx + lx, 0.003, zMid); g.add(strip);
   });
+  var centreLine = new THREE.Mesh(new THREE.PlaneGeometry(0.04, room.roomLen - 3), inlayMat);
+  centreLine.rotation.x = -Math.PI / 2; centreLine.position.set(cx, 0.003, zMid); g.add(centreLine);
 
-  // Floor reflection
-  var reflMat = new THREE.MeshStandardMaterial({ color: "#e0d8cc", roughness: 0.05, metalness: 0.4, transparent: true, opacity: 0.1 });
+  /* Floor reflection */
+  var reflMat = new THREE.MeshStandardMaterial({
+    color: "#e0d8cc", roughness: 0.02, metalness: 0.45,
+    transparent: true, opacity: 0.08,
+  });
   var refl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), reflMat);
   refl.rotation.x = -Math.PI / 2; refl.position.set(cx, 0.002, zMid); g.add(refl);
 
-  // Ceiling
+  /* Ceiling */
   var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, ROOM_H, zMid); g.add(ceil);
 
-  // Side walls
+  /* Ceiling beams (coffers) */
+  var beamCount = Math.max(2, Math.floor(room.roomLen / 6));
+  for (var bi = 0; bi < beamCount; bi++) {
+    var bz = room.zStart - ROOM_PAD - (bi + 0.5) * ((room.roomLen - ROOM_PAD * 2) / beamCount);
+    var bm = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.08, 0.16), beamMat);
+    bm.position.set(cx, ROOM_H - 0.04, bz); g.add(bm);
+  }
+
+  /* Side walls */
   var wallGeo = new THREE.PlaneGeometry(room.roomLen, ROOM_H);
   var lw = new THREE.Mesh(wallGeo, wallMat);
   lw.rotation.y = Math.PI / 2; lw.position.set(cx - WALL_X, ROOM_H / 2, zMid); lw.receiveShadow = true; g.add(lw);
   var rw = new THREE.Mesh(wallGeo, wallMat);
   rw.rotation.y = -Math.PI / 2; rw.position.set(cx + WALL_X, ROOM_H / 2, zMid); rw.receiveShadow = true; g.add(rw);
 
-  // End walls with doorways
+  /* End walls with doorways */
   if (ri === 0) {
     var ew = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_H), wallMat);
     ew.rotation.y = Math.PI; ew.position.set(cx, ROOM_H / 2, room.zStart); g.add(ew);
@@ -271,7 +321,7 @@ function buildRoom(ri) {
     buildDoorwayWall(g, cx, room.zEnd, 0, ROOM_W, ROOM_H);
   }
 
-  // Wainscoting
+  /* Wainscoting */
   var wainH = 1.1;
   var wainGeo = new THREE.PlaneGeometry(room.roomLen, wainH);
   [-WALL_X, WALL_X].forEach(function(x, idx) {
@@ -280,63 +330,64 @@ function buildRoom(ri) {
     w.position.set(cx + x + (idx === 0 ? 0.01 : -0.01), wainH / 2, zMid); g.add(w);
   });
 
-  // Chair rail
-  var railGeo = new THREE.BoxGeometry(0.06, 0.05, room.roomLen + 0.2);
-  [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
+  /* Chair rail */
+  var railGeo = new THREE.BoxGeometry(0.07, 0.06, room.roomLen + 0.2);
+  [-WALL_X + 0.035, WALL_X - 0.035].forEach(function(x) {
     var rail = new THREE.Mesh(railGeo, mouldMat); rail.position.set(cx + x, wainH, zMid); g.add(rail);
   });
 
-  // Crown moulding
-  var crownGeo = new THREE.BoxGeometry(0.14, 0.1, room.roomLen + 0.4);
-  [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
-    var crown = new THREE.Mesh(crownGeo, mouldMat); crown.position.set(cx + x, ROOM_H - 0.05, zMid); g.add(crown);
+  /* Crown moulding (two-piece) */
+  [-WALL_X + 0.06, WALL_X - 0.06].forEach(function(x) {
+    var crown1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, room.roomLen + 0.4), mouldMat);
+    crown1.position.set(cx + x, ROOM_H - 0.035, zMid); g.add(crown1);
+    var crown2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, room.roomLen + 0.4), mouldMat);
+    crown2.position.set(cx + x, ROOM_H - 0.07, zMid); g.add(crown2);
   });
 
-  // Baseboard
-  var skirtGeo = new THREE.BoxGeometry(0.06, 0.18, room.roomLen + 0.1);
-  [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
-    var skirt = new THREE.Mesh(skirtGeo, baseMat); skirt.position.set(cx + x, 0.09, zMid); g.add(skirt);
+  /* Baseboard */
+  var skirtGeo = new THREE.BoxGeometry(0.07, 0.2, room.roomLen + 0.1);
+  [-WALL_X + 0.035, WALL_X - 0.035].forEach(function(x) {
+    var skirt = new THREE.Mesh(skirtGeo, baseMat); skirt.position.set(cx + x, 0.1, zMid); g.add(skirt);
   });
 
-  // Skylights
+  /* Skylights */
   var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture() });
-  var trimMat = new THREE.MeshStandardMaterial({ color: "#d4cec2", roughness: 0.6, metalness: 0.15 });
   var skylightCount = Math.max(1, Math.floor(room.roomLen / 10));
   for (var ski = 0; ski < skylightCount; ski++) {
     var sz = room.zStart - ROOM_PAD - (ski + 0.5) * ((room.roomLen - ROOM_PAD * 2) / skylightCount);
     var pane = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.6), skyMat);
     pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.01, sz); g.add(pane);
     [[0, -0.85, 3.2, 0.08], [0, 0.85, 3.2, 0.08], [-1.55, 0, 0.08, 1.8], [1.55, 0, 0.08, 1.8]].forEach(function(t) {
-      var tr = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.05, t[3]), trimMat);
+      var tr = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.06, t[3]), trimMat);
       tr.position.set(cx + t[0], ROOM_H - 0.02, sz + t[1]); g.add(tr);
     });
-    var skyLight = new THREE.PointLight(0xc4dff0, 0.4, 7); skyLight.position.set(cx, ROOM_H - 0.1, sz); g.add(skyLight);
+    var skyLight = new THREE.PointLight(0xc8e4f5, 0.5, 9);
+    skyLight.position.set(cx, ROOM_H - 0.1, sz); g.add(skyLight);
   }
 
-  // Per-artwork spotlights
+  /* Wall-wash lights (reduced count — ~1 per 3 art slots instead of per-slot) */
   var slotZStart = room.zStart - ROOM_PAD;
-  for (var si = 0; si < room.slotsPerSide; si++) {
-    var z = slotZStart - si * SLOT_SPACING;
-    var sl = new THREE.RectAreaLight(0xfff0dd, 6, 1.4, 0.4);
-    sl.position.set(cx - WALL_X + 1.8, ROOM_H - 0.3, z); sl.lookAt(cx - WALL_X + 0.1, 1.8, z); g.add(sl);
-    var sr = new THREE.RectAreaLight(0xfff0dd, 6, 1.4, 0.4);
-    sr.position.set(cx + WALL_X - 1.8, ROOM_H - 0.3, z); sr.lookAt(cx + WALL_X - 0.1, 1.8, z); g.add(sr);
+  var lightsPerSide = Math.max(1, Math.ceil(room.slotsPerSide / 3));
+  for (var li = 0; li < lightsPerSide; li++) {
+    var lz = slotZStart - ((li + 0.5) * room.slotsPerSide / lightsPerSide) * SLOT_SPACING;
+    var sl = new THREE.RectAreaLight(0xfff0dd, 5.5, 2.8, 0.5);
+    sl.position.set(cx - WALL_X + 1.8, ROOM_H - 0.3, lz);
+    sl.lookAt(cx - WALL_X + 0.1, 1.8, lz); g.add(sl);
+    var sr = new THREE.RectAreaLight(0xfff0dd, 5.5, 2.8, 0.5);
+    sr.position.set(cx + WALL_X - 1.8, ROOM_H - 0.3, lz);
+    sr.lookAt(cx + WALL_X - 0.1, 1.8, lz); g.add(sr);
   }
 
-  // Wash lights
-  var washCount = Math.max(1, Math.ceil(room.roomLen / 14));
-  for (var wi = 0; wi < washCount; wi++) {
-    var wz = room.zStart - ROOM_PAD - (wi + 0.5) * ((room.roomLen - ROOM_PAD) / washCount);
-    var washLight = new THREE.PointLight(0xfff4e8, 0.4, 12); washLight.position.set(cx, ROOM_H - 0.1, wz); g.add(washLight);
-  }
+  /* Ambient fill (single point light per room) */
+  var fillLight = new THREE.PointLight(0xfff4e8, 0.35, Math.max(12, room.roomLen * 0.6));
+  fillLight.position.set(cx, ROOM_H - 0.2, zMid); g.add(fillLight);
 
-  // Bench
+  /* Bench */
   if (room.slotsPerSide >= 3) {
     var bench = buildBench(); bench.position.set(cx, 0, zMid); g.add(bench);
-    benchPositions.push({ x: cx, z: zMid });
   }
 
-  // Room sign
+  /* Room sign */
   var roomCanvas = document.createElement("canvas");
   roomCanvas.width = 256; roomCanvas.height = 64;
   var rctx = roomCanvas.getContext("2d");
@@ -353,7 +404,7 @@ function buildRoom(ri) {
   );
   roomSign.position.set(cx, ROOM_H - 0.4, room.zStart - 0.02); g.add(roomSign);
 
-  // Art slots
+  /* Art slot positions */
   room.artSlots = [];
   var WO = ROOM_W / 2;
   for (var i = 0; i < room.slotsPerSide; i++) {
@@ -362,12 +413,85 @@ function buildRoom(ri) {
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.1, z), ry: -Math.PI / 2 });
   }
 
-  // Podium in first room
+  /* Podium in first room */
   if (ri === 0) {
     var podium = buildPodium(); podium.position.set(cx, 0, room.zStart - 3); g.add(podium);
   }
 
   galleryGroup.add(g);
+
+  /* Build corridor leading INTO this room */
+  if (ri > 0 && !room.corridorGroup) {
+    buildCorridor(ri - 1);
+  }
+}
+
+/* ── Unload room geometry + art ───────────────────────────────────────────── */
+function unloadRoom(ri) {
+  var room = rooms[ri];
+  if (!room.built) return;
+
+  if (room.group) {
+    galleryGroup.remove(room.group);
+    room.group.traverse(function(ch) {
+      if (ch.isMesh || ch.isInstancedMesh) {
+        if (ch.geometry !== sharedVoxelGeo && ch.geometry !== sharedPlaceholderGeo) {
+          ch.geometry?.dispose();
+        }
+        [].concat(ch.material).forEach(function(m) {
+          if (m && !isSharedMaterial(m)) m.dispose();
+        });
+      }
+      if (ch.isLight && ch.dispose) ch.dispose();
+    });
+    room.group = null;
+  }
+
+  if (room.corridorGroup) {
+    galleryGroup.remove(room.corridorGroup);
+    room.corridorGroup.traverse(function(ch) {
+      if (ch.isMesh) {
+        if (ch.geometry !== sharedVoxelGeo && ch.geometry !== sharedPlaceholderGeo) {
+          ch.geometry?.dispose();
+        }
+        [].concat(ch.material).forEach(function(m) {
+          if (m && !isSharedMaterial(m)) m.dispose();
+        });
+      }
+      if (ch.isLight && ch.dispose) ch.dispose();
+    });
+    room.corridorGroup = null;
+  }
+
+  unloadRoomArt(ri);
+
+  if (ri === 0) podiumBtnMesh = null;
+
+  room.built = false;
+  room.artSlots = [];
+}
+
+var sharedMats = [floorMat, wallMat, panelMat, ceilMat, mouldMat, baseMat,
+  frameMat, backMat, placeMat, benchMat, benchSeatMat, corrFloorMat,
+  archMat, inlayMat, beamMat, trimMat];
+function isSharedMaterial(m) {
+  return sharedMats.indexOf(m) >= 0;
+}
+
+function unloadRoomArt(ri) {
+  var room = rooms[ri];
+  if (!room.loaded && !room.loading) return;
+  room.loading = false;
+
+  var toRemove = [];
+  for (var i = 0; i < artGroup.children.length; i++) {
+    var c = artGroup.children[i];
+    if (c.userData && c.userData.roomIdx === ri) toRemove.push(c);
+  }
+  for (var j = 0; j < toRemove.length; j++) {
+    artGroup.remove(toRemove[j]); dispose(toRemove[j]);
+  }
+  room.loaded = false;
 }
 
 /* ── Doorway wall ─────────────────────────────────────────────────────────── */
@@ -384,14 +508,14 @@ function buildDoorwayWall(parent, cx, z, ry, wallW, wallH) {
   var lt = new THREE.Mesh(new THREE.PlaneGeometry(doorW, lintelH), wallMat);
   lt.rotation.y = ry; lt.position.set(cx, doorH + lintelH / 2, z); parent.add(lt);
 
-  // Archway trim
+  /* Archway trim */
   [-doorW / 2, doorW / 2].forEach(function(dx) {
-    var post = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorH, 0.12), archMat);
+    var post = new THREE.Mesh(new THREE.BoxGeometry(0.14, doorH, 0.14), archMat);
     post.position.set(cx + dx, doorH / 2, z); parent.add(post);
   });
-  var lintTrim = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.24, 0.14, 0.12), archMat);
+  var lintTrim = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.28, 0.16, 0.14), archMat);
   lintTrim.position.set(cx, doorH, z); parent.add(lintTrim);
-  var keystone = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.22, 0.14), archMat);
+  var keystone = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.16), archMat);
   keystone.position.set(cx, doorH + 0.08, z); parent.add(keystone);
 }
 
@@ -399,7 +523,9 @@ function buildDoorwayWall(parent, cx, z, ry, wallW, wallH) {
 function buildCorridor(ri) {
   var room = rooms[ri], next = rooms[ri + 1];
   if (!next) return;
+  if (next.corridorGroup) return;
   var g = new THREE.Group();
+  next.corridorGroup = g;
   var z1 = room.zEnd, z2 = next.zStart;
   var cx1 = room.cx, cx2 = next.cx;
   var zMid = (z1 + z2) / 2;
@@ -409,6 +535,11 @@ function buildCorridor(ri) {
     addCorridorCross(g, (cx1 + cx2) / 2, zMid, Math.abs(cx2 - cx1) + CORR_W, CORR_W);
   }
   addCorridorSegment(g, cx2, (zMid + z2) / 2, CORR_W, Math.abs(zMid - z2) + 1);
+
+  /* Single corridor light */
+  var corrLight = new THREE.PointLight(0xfff4e8, 0.4, 12);
+  corrLight.position.set((cx1 + cx2) / 2, ROOM_H - 0.2, zMid);
+  g.add(corrLight);
 
   galleryGroup.add(g);
 }
@@ -421,7 +552,6 @@ function addCorridorSegment(parent, cx, zMid, w, len) {
   var wallGeo = new THREE.PlaneGeometry(len, ROOM_H);
   var lw = new THREE.Mesh(wallGeo, wallMat); lw.rotation.y = Math.PI / 2; lw.position.set(cx - w / 2, ROOM_H / 2, zMid); parent.add(lw);
   var rw = new THREE.Mesh(wallGeo, wallMat); rw.rotation.y = -Math.PI / 2; rw.position.set(cx + w / 2, ROOM_H / 2, zMid); parent.add(rw);
-  var corrLight = new THREE.PointLight(0xfff4e8, 0.3, 8); corrLight.position.set(cx, ROOM_H - 0.2, zMid); parent.add(corrLight);
 }
 
 function addCorridorCross(parent, cx, zMid, w, h) {
@@ -432,7 +562,6 @@ function addCorridorCross(parent, cx, zMid, w, h) {
   var wallGeo = new THREE.PlaneGeometry(w, ROOM_H);
   var fw = new THREE.Mesh(wallGeo, wallMat); fw.position.set(cx, ROOM_H / 2, zMid - h / 2); parent.add(fw);
   var bw = new THREE.Mesh(wallGeo, wallMat); bw.rotation.y = Math.PI; bw.position.set(cx, ROOM_H / 2, zMid + h / 2); parent.add(bw);
-  var crossLight = new THREE.PointLight(0xfff4e8, 0.3, 8); crossLight.position.set(cx, ROOM_H - 0.2, zMid); parent.add(crossLight);
 }
 
 /* ── Bench ────────────────────────────────────────────────────────────────── */
@@ -444,23 +573,33 @@ function buildBench() {
     var leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.43, 0.06), benchMat);
     leg.position.set(p[0], 0.215, p[1]); leg.castShadow = true; g.add(leg);
   });
-  var stretcher = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat); stretcher.position.set(0, 0.14, 0); g.add(stretcher);
+  var stretcher = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat);
+  stretcher.position.set(0, 0.14, 0); g.add(stretcher);
   return g;
 }
 
-/* ── Build full museum ────────────────────────────────────────────────────── */
+/* ── Build museum (lazy — only plans layout + builds starting rooms) ──────── */
 function buildMuseum(totalCount) {
   while (galleryGroup.children.length) {
     var c = galleryGroup.children[0]; galleryGroup.remove(c);
-    c.traverse(function(ch) { if (ch.isMesh) ch.geometry?.dispose(); });
+    c.traverse(function(ch) {
+      if (ch.isMesh || ch.isInstancedMesh) {
+        if (ch.geometry !== sharedVoxelGeo && ch.geometry !== sharedPlaceholderGeo) {
+          ch.geometry?.dispose();
+        }
+      }
+      if (ch.isLight && ch.dispose) ch.dispose();
+    });
   }
   clearArt();
   benchPositions = [];
+  podiumBtnMesh = null;
   planLayout(totalCount);
-  for (var ri = 0; ri < rooms.length; ri++) {
-    buildRoom(ri);
-    if (ri < rooms.length - 1) buildCorridor(ri);
-  }
+
+  /* Only build rooms 0 and 1 upfront — the rest are built lazily */
+  buildRoom(0);
+  if (rooms.length > 1) buildRoom(1);
+
   if (rooms.length) camera.position.set(rooms[0].cx, 1.7, rooms[0].zStart - 2);
 }
 
@@ -482,9 +621,10 @@ function makeLabelTex(tokenId, type, ap) {
   return tex;
 }
 
-/* ── Build voxel artwork ──────────────────────────────────────────────────── */
-function buildVoxelArtwork(tokenId, rgbaData, meta) {
+/* ── Build voxel artwork (no per-art light) ───────────────────────────────── */
+function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   var group = new THREE.Group();
+  group.userData.roomIdx = roomIdx;
 
   var frameOuter = new THREE.Mesh(new THREE.BoxGeometry(ART_W + 0.2, ART_H + 0.2, 0.06), frameMat);
   frameOuter.position.z = -0.06; frameOuter.userData.isFrame = true; frameOuter.visible = framesVisible;
@@ -511,9 +651,8 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
   }
 
   if (voxels.length) {
-    var mat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05, vertexColors: true });
-    var geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
-    var inst = new THREE.InstancedMesh(geo, mat, voxels.length);
+    var mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.06, vertexColors: true });
+    var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
     var m4 = new THREE.Matrix4(), col = new THREE.Color();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
@@ -532,7 +671,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
     group.add(inst);
   }
 
-  // Flat painting for framed mode
+  /* Flat painting for framed mode */
   var flatCanvas = document.createElement("canvas");
   flatCanvas.width = GRID; flatCanvas.height = GRID;
   var flatCtx = flatCanvas.getContext("2d");
@@ -556,8 +695,6 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
   );
   label.position.set(0, -(ART_H / 2 + 0.36), 0.01); group.add(label);
 
-  var artLight = new THREE.PointLight(0xfff0dd, 1.0, 3.0, 2.0); artLight.position.set(0, 0.5, 0.9); group.add(artLight);
-
   group.userData.revealT = 0;
   group.userData.revealing = true;
   group.scale.set(0.001, 0.001, 0.001);
@@ -565,9 +702,10 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
 }
 
 /* ── Placeholder / dispose ────────────────────────────────────────────────── */
-function buildPlaceholder() {
+function buildPlaceholder(roomIdx) {
   var g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(2.32, 2.32, 0.04), placeMat));
+  g.userData.roomIdx = roomIdx;
+  g.add(new THREE.Mesh(sharedPlaceholderGeo, placeMat));
   return g;
 }
 
@@ -575,8 +713,12 @@ function dispose(obj) {
   if (!obj) return;
   obj.traverse(function(c) {
     if (c.isMesh || c.isInstancedMesh) {
-      c.geometry?.dispose();
-      [].concat(c.material).forEach(function(m) { m?.dispose(); });
+      if (c.geometry !== sharedVoxelGeo && c.geometry !== sharedPlaceholderGeo) {
+        c.geometry?.dispose();
+      }
+      [].concat(c.material).forEach(function(m) {
+        if (m && !isSharedMaterial(m)) m?.dispose();
+      });
     }
   });
 }
@@ -597,48 +739,99 @@ async function loadRoomArt(ri) {
   var phs = tokens.map(function(_, j) {
     var slot = room.artSlots[j];
     if (!slot) return null;
-    var ph = buildPlaceholder(); ph.position.copy(slot.pos); ph.rotation.y = slot.ry;
+    var ph = buildPlaceholder(ri); ph.position.copy(slot.pos); ph.rotation.y = slot.ry;
     artGroup.add(ph); return ph;
   });
 
   var BATCH = 4;
   for (var bi = 0; bi < tokens.length; bi += BATCH) {
+    if (!room.loading) return;
     var batch = tokens.slice(bi, bi + BATCH);
     var batchStart = bi;
     await Promise.allSettled(batch.map(async function(tokenId, j) {
       var idx = batchStart + j;
+      if (!room.loading) return;
       try {
         var results = await Promise.all([fetchImageRGBA(tokenId), fetchTokenMeta(tokenId)]);
+        if (!room.loading) return;
         var slot = room.artSlots[idx];
         if (!slot) return;
         var art = buildVoxelArtwork(tokenId, results[0], {
           type: results[1]?.type || "human", ap: results[1]?.actionPoints || null,
-        });
+        }, ri);
         art.position.copy(slot.pos); art.rotation.y = slot.ry;
         if (phs[idx]) { artGroup.remove(phs[idx]); dispose(phs[idx]); }
         artGroup.add(art);
       } catch (e) {}
     }));
   }
-  room.loaded = true;
-  room.loading = false;
+  if (room.loading) {
+    room.loaded = true;
+    room.loading = false;
+  }
 }
 
-/* ── Room loading check ───────────────────────────────────────────────────── */
+/* ── Room lifecycle management ────────────────────────────────────────────── */
 function checkRoomLoading() {
   var px = camera.position.x, pz = camera.position.z;
   var newRoom = -1;
+
+  /* Find which room the player is in */
   for (var ri = 0; ri < rooms.length; ri++) {
     var r = rooms[ri], WX = ROOM_W / 2;
     if (px >= r.cx - WX - 1 && px <= r.cx + WX + 1 && pz >= r.zEnd - 1 && pz <= r.zStart + 1) {
       newRoom = ri; break;
     }
   }
-  if (newRoom >= 0 && newRoom !== currentRoomIdx) {
-    currentRoomIdx = newRoom;
-    loadRoomArt(newRoom);
-    if (newRoom > 0) loadRoomArt(newRoom - 1);
-    if (newRoom < rooms.length - 1) loadRoomArt(newRoom + 1);
+
+  /* Fallback: check corridors */
+  if (newRoom < 0) {
+    var bestDist = Infinity;
+    for (var ri2 = 0; ri2 < rooms.length; ri2++) {
+      var rm = rooms[ri2];
+      var rmMid = (rm.zStart + rm.zEnd) / 2;
+      var d = Math.abs(pz - rmMid);
+      if (d < bestDist) { bestDist = d; newRoom = ri2; }
+    }
+  }
+
+  if (newRoom < 0) return;
+  currentRoomIdx = newRoom;
+
+  /* Build rooms within build range */
+  for (var i = 0; i < rooms.length; i++) {
+    var dist = Math.abs(i - newRoom);
+    if (dist <= ROOM_BUILD_RANGE && !rooms[i].built) {
+      buildRoom(i);
+    }
+  }
+
+  /* Load art within art range */
+  for (var i = 0; i < rooms.length; i++) {
+    var dist = Math.abs(i - newRoom);
+    if (dist <= ROOM_ART_RANGE) {
+      loadRoomArt(i);
+    }
+  }
+
+  /* Unload rooms beyond unload range */
+  for (var i = 0; i < rooms.length; i++) {
+    var dist = Math.abs(i - newRoom);
+    if (dist > ROOM_UNLOAD_RANGE && rooms[i].built) {
+      unloadRoom(i);
+    }
+    /* Unload art beyond art range (keep geometry) */
+    if (dist > ROOM_ART_RANGE && (rooms[i].loaded || rooms[i].loading)) {
+      unloadRoomArt(i);
+    }
+  }
+
+  /* Rebuild bench positions from currently built rooms */
+  benchPositions = [];
+  for (var i = 0; i < rooms.length; i++) {
+    if (rooms[i].built && rooms[i].slotsPerSide >= 3) {
+      benchPositions.push({ x: rooms[i].cx, z: (rooms[i].zStart + rooms[i].zEnd) / 2 });
+    }
   }
 }
 
@@ -987,8 +1180,7 @@ async function loadMuseumForWallets(rawInput) {
     : addresses.length + " wallets \u00b7 " + allTokenIds.length + " normies";
 
   currentRoomIdx = 0;
-  loadRoomArt(0);
-  if (rooms.length > 1) loadRoomArt(1);
+  checkRoomLoading();
 }
 
 /* ── Event listeners ──────────────────────────────────────────────────────── */
@@ -1009,7 +1201,7 @@ homeBtn.addEventListener("click", function(e) { e.preventDefault(); showLandingP
 exitBtn.addEventListener("click", exitMuseum);
 loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
 walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
-document.getElementById("interaction-hint").addEventListener("click", function(e) { e.stopPropagation(); pressButton(); });
+document.getElementById("interaction-hint").addEventListener("click", function(e) { e.stopPropagation(); tryInteract(); });
 
 /* ── Help tooltip ─────────────────────────────────────────────────────────── */
 var helpBtn = $("helpBtn");
@@ -1247,7 +1439,6 @@ function move(dt) {
       var nx = THREE.MathUtils.clamp(joy.dx / JOY_R, -1, 1);
       var ny = THREE.MathUtils.clamp(joy.dy / JOY_R, -1, 1);
       var spd = 3.5;
-      // ny negative = joystick up = forward (into -Z when yaw=0)
       var fwd = ny * spd * dt, right = nx * spd * dt;
       camera.position.x += Math.sin(mobileYaw) * fwd + Math.cos(mobileYaw) * right;
       camera.position.z += Math.cos(mobileYaw) * fwd - Math.sin(mobileYaw) * right;
@@ -1272,7 +1463,7 @@ function move(dt) {
     p.x = cl2.x; p.z = cl2.z;
   }
 
-  // Jump physics
+  /* Jump physics */
   if (isJumping) {
     jumpVelocity += GRAVITY * dt;
     camera.position.y += jumpVelocity * dt;
