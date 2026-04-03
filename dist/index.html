@@ -3,59 +3,52 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-    <title>Normuseum · Normies Voxel Gallery</title>
+    <title>Normuseum · Normies Museum</title>
     <meta name="description" content="Walk through your Normies collection in a first-person 3D voxel gallery." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-BzBUXTaA.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DLqmWxks.css">
+    <script type="module" crossorigin src="./assets/index-BsL24qM4.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-9NA9AXeD.css">
   </head>
   <body>
-    <canvas id="scene"></canvas>
+    <canvas id="scene" role="img" aria-label="3D gallery view"></canvas>
 
     <!-- LANDING OVERLAY -->
-    <div id="overlay">
-      <nav id="nav">
+    <div id="overlay" role="main">
+      <nav id="nav" aria-label="Main navigation">
         <a href="/" class="nav-brand">normuseum</a>
         <div class="nav-right">
+          <a class="nav-link" href="/" id="homeBtn">home</a>
           <button class="nav-link" id="aboutBtn" type="button">about</button>
           <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
           <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode">
+            <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+            <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
         </div>
       </nav>
 
       <main id="landing">
-        <div class="hero-indicator">
-          <span class="indicator-dot"></span>
-          10,000 normies · ethereum mainnet · voxel gallery
+        <div class="hero-center">
+          <div class="hero-badge">3D voxel gallery</div>
+          <h1 class="hero-title">normies<br/>museum</h1>
+          <p class="hero-sub">walk through your collection in a first-person gallery.<br/>each normie sculpted as a tactile voxel relief on the walls.</p>
+
+          <div class="input-group" role="search">
+            <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
+              placeholder="wallet address or ENS name" aria-label="Wallet address or ENS name" />
+            <button id="loadBtn" type="button">enter museum →</button>
+          </div>
+          <p id="status" class="status-line" aria-live="polite"></p>
+
+          <p class="hero-hint">supports ENS names · multiple wallets · comma-separated</p>
         </div>
-
-        <h1 class="hero-title">
-          normies<br />
-          <span class="hero-muted">voxel</span><br />
-          museum
-        </h1>
-
-        <p class="hero-desc">
-          walk your collection in a first-person 3D gallery.<br />
-          each normie rendered as a tactile voxel relief.
-        </p>
-
-        <div class="input-group">
-          <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
-            placeholder="0x… or vitalik.eth — comma-separate multiple" />
-          <button id="loadBtn" type="button">enter museum</button>
-        </div>
-
-        <p id="status" class="status-line"></p>
       </main>
 
       <footer id="landing-footer">
-        <span class="footer-tagline">normie eternal museum</span>
-        <span class="footer-sub">10,000 on-chain faces · all history preserved</span>
         <div class="footer-links">
-          <a href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
           <a href="https://opensea.io/collection/normies" target="_blank" rel="noopener">opensea ↗</a>
         </div>
         <span class="footer-credit">built by <a href="https://x.com/aster0x" target="_blank" rel="noopener">@aster0x</a></span>
@@ -63,20 +56,26 @@
     </div>
 
     <!-- IN-MUSEUM HUD -->
-    <div id="hud" class="hud-hidden">
+    <div id="hud" class="hud-hidden" aria-hidden="true">
       <div id="hud-bar">
         <span class="hud-brand">normuseum</span>
         <span id="hud-meta" class="hud-meta"></span>
+        <button id="fullscreenBtn" class="hud-btn" type="button" aria-label="Toggle fullscreen">
+          <svg class="fs-icon fs-icon--enter" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+          <svg class="fs-icon fs-icon--exit" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+        </button>
         <button id="exitBtn" class="hud-exit" type="button">✕ exit</button>
       </div>
       <div id="hud-controls">
         <div class="ctrl"><kbd>W A S D</kbd><span>move</span></div>
         <div class="ctrl"><kbd>mouse</kbd><span>look</span></div>
         <div class="ctrl"><kbd>shift</kbd><span>sprint</span></div>
+        <div class="ctrl"><kbd>E</kbd><span>interact</span></div>
+        <div class="ctrl"><kbd>F</kbd><span>fullscreen</span></div>
         <div class="ctrl"><kbd>esc</kbd><span>unlock</span></div>
       </div>
       <div id="progress-wrap">
-        <div id="progress-bar"></div>
+        <div id="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div>
         <div id="progress-label"></div>
       </div>
     </div>
@@ -111,10 +110,14 @@
             <span class="modal-pill-sub">official collection</span>
           </a>
         </div>
-        <p class="modal-footer-text">10,000 on-chain faces · ethereum mainnet</p>
+        <p class="modal-footer-text">a 3D gallery experience · ethereum mainnet</p>
       </div>
     </div>
 
+    <button id="interaction-hint" class="interaction-hint" type="button">
+      <span class="hint-desktop">[E] toggle frames</span>
+      <span class="hint-touch">tap to toggle frames</span>
+    </button>
     <div id="crosshair"></div>
     <div id="joystick-base" aria-hidden="true"><div id="joystick-knob"></div></div>
 

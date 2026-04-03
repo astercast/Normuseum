@@ -8,13 +8,18 @@ RectAreaLightUniformsLib.init();
 /* ── Constants ────────────────────────────────────────────────────────────── */
 const NORMIES_CONTRACT = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
 const NORMIES_API      = "https://api.normies.art";
-const MAX_ARTWORKS     = 100;
 const VOXEL_SIZE       = 0.048;
 const GRID             = 40;
 const CELL             = 1.98 / GRID;
 const ART_W = 2.12, ART_H = 2.12;
 const ROOM_W = 14, ROOM_H = 4.8;
 const SLOT_SPACING = 3.2;
+
+/* ── Frame toggle state ───────────────────────────────────────────────────── */
+let framesVisible = false;
+let podiumBtnMesh = null;
+let buttonHovered = false;
+let btnAnimating = false;
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -32,6 +37,8 @@ const progressLabel = $("progress-label");
 const aboutModal    = $("about-modal");
 const aboutBtn      = $("aboutBtn");
 const aboutCloseBtn = $("aboutCloseBtn");
+const themeToggle   = $("themeToggle");
+const fullscreenBtn = $("fullscreenBtn");
 
 /* ── Platform ─────────────────────────────────────────────────────────────── */
 const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
@@ -212,6 +219,11 @@ function buildGallery(count) {
     galleryGroup.add(r);
   }
 
+  // Podium with red button near entrance
+  var podium = buildPodium();
+  podium.position.set(0, 0, currentRoomLen / 2 - 6);
+  galleryGroup.add(podium);
+
   camera.position.set(0, 1.7, currentRoomLen / 2 - 2);
 }
 
@@ -247,6 +259,8 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
     new THREE.BoxGeometry(ART_W + 0.2, ART_H + 0.2, 0.06), frameMat
   );
   frameOuter.position.z = -0.06;
+  frameOuter.userData.isFrame = true;
+  frameOuter.visible = framesVisible;
   group.add(frameOuter);
 
   // Backing
@@ -254,6 +268,8 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
     new THREE.BoxGeometry(ART_W, ART_H, 0.03), backMat
   );
   backing.position.z = -0.03;
+  backing.userData.isFrame = true;
+  backing.visible = framesVisible;
   group.add(backing);
 
   // Parse pixels into dark / light buckets
@@ -361,6 +377,147 @@ function clearArt() {
   }
 }
 
+/* ── Podium with red button ───────────────────────────────────────────────── */
+function makePodiumLabel() {
+  var c = document.createElement("canvas");
+  c.width = 256; c.height = 64;
+  var ctx = c.getContext("2d");
+  ctx.fillStyle = "rgba(240,240,238,0.92)";
+  ctx.fillRect(0, 0, 256, 64);
+  ctx.fillStyle = "#666666";
+  ctx.font = 'bold 13px "IBM Plex Mono", monospace';
+  ctx.textAlign = "center";
+  ctx.fillText("TOGGLE FRAMES", 128, 26);
+  ctx.fillStyle = "#999999";
+  ctx.font = '11px "IBM Plex Mono", monospace';
+  ctx.fillText("[E] or click", 128, 48);
+  var tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function buildPodium() {
+  var group = new THREE.Group();
+
+  // Pedestal column
+  var base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 0.3, 0.92, 32),
+    new THREE.MeshStandardMaterial({ color: "#eaeae8", roughness: 0.25, metalness: 0.05 })
+  );
+  base.position.y = 0.46;
+  base.castShadow = true;
+  base.receiveShadow = true;
+  group.add(base);
+
+  // Top plate
+  var plate = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.28, 0.035, 32),
+    new THREE.MeshStandardMaterial({ color: "#d8d8d6", roughness: 0.3, metalness: 0.12 })
+  );
+  plate.position.y = 0.94;
+  plate.castShadow = true;
+  group.add(plate);
+
+  // Button housing ring
+  var housing = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.13, 0.13, 0.03, 24),
+    new THREE.MeshStandardMaterial({ color: "#555555", roughness: 0.2, metalness: 0.7 })
+  );
+  housing.position.y = 0.965;
+  group.add(housing);
+
+  // Red button
+  var btnMat = new THREE.MeshStandardMaterial({
+    color: "#cc2020", roughness: 0.35, metalness: 0.1,
+    emissive: new THREE.Color("#330808"), emissiveIntensity: 0.4
+  });
+  var btn = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 24), btnMat);
+  btn.position.y = 0.99;
+  btn.userData.isButton = true;
+  btn.castShadow = true;
+  podiumBtnMesh = btn;
+  group.add(btn);
+
+  // Red glow
+  var glow = new THREE.PointLight(0xff3333, 0.4, 1.8);
+  glow.position.y = 1.15;
+  group.add(glow);
+
+  // Signs on all four sides
+  var labelTex = makePodiumLabel();
+  var signMat = new THREE.MeshBasicMaterial({ map: labelTex, transparent: true });
+  var positions = [
+    { p: [0, 0.5, 0.31], ry: 0 },
+    { p: [0, 0.5, -0.31], ry: Math.PI },
+    { p: [-0.31, 0.5, 0], ry: Math.PI / 2 },
+    { p: [0.31, 0.5, 0], ry: -Math.PI / 2 },
+  ];
+  for (var si = 0; si < positions.length; si++) {
+    var s = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.1), signMat);
+    s.position.set(positions[si].p[0], positions[si].p[1], positions[si].p[2]);
+    s.rotation.y = positions[si].ry;
+    group.add(s);
+  }
+
+  return group;
+}
+
+/* ── Raycaster + interaction ──────────────────────────────────────────────── */
+var raycaster = new THREE.Raycaster();
+raycaster.far = 3.5;
+var screenCenter = new THREE.Vector2(0, 0);
+
+function checkButtonInteraction() {
+  if (!inMuseum || !podiumBtnMesh) {
+    if (buttonHovered) { buttonHovered = false; updateInteractionHint(false); }
+    return;
+  }
+  raycaster.setFromCamera(screenCenter, camera);
+  var intersects = raycaster.intersectObject(podiumBtnMesh);
+  var hit = intersects.length > 0 && intersects[0].distance < 3.5;
+  if (hit !== buttonHovered) {
+    buttonHovered = hit;
+    updateInteractionHint(hit);
+  }
+}
+
+function updateInteractionHint(show) {
+  var el = document.getElementById("interaction-hint");
+  if (el) el.classList.toggle("visible", show);
+}
+
+function pressButton() {
+  if (!podiumBtnMesh || btnAnimating) return;
+  framesVisible = !framesVisible;
+  artGroup.traverse(function(child) {
+    if (child.userData && child.userData.isFrame) child.visible = framesVisible;
+  });
+  btnAnimating = true;
+  var origY = podiumBtnMesh.position.y;
+  podiumBtnMesh.position.y = origY - 0.02;
+  playButtonClick();
+  setTimeout(function() { podiumBtnMesh.position.y = origY; btnAnimating = false; }, 150);
+}
+
+function tryInteract() { if (buttonHovered) pressButton(); }
+
+function playButtonClick() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator();
+  var gain = audioCtx.createGain();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(600, now);
+  osc.frequency.exponentialRampToValueAtTime(150, now + 0.04);
+  gain.gain.setValueAtTime(0.08, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.06);
+}
+
 /* ── API calls ────────────────────────────────────────────────────────────── */
 async function fetchOwnedTokenIds(address) {
   const ids = [];
@@ -440,6 +597,9 @@ function enterMuseum() {
 
 function exitMuseum() {
   if (controls) controls.unlock();
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
   inMuseum = false;
   overlayEl.classList.remove("hidden");
   hudEl.classList.add("hud-hidden");
@@ -477,7 +637,7 @@ async function loadMuseumForWallets(rawInput) {
     return;
   }
 
-  var shown = allIds.slice(0, MAX_ARTWORKS);
+  var shown = allIds;
 
   buildGallery(shown.length);
   clearArt();
@@ -502,24 +662,30 @@ async function loadMuseumForWallets(rawInput) {
   });
 
   var done = 0;
-  await Promise.allSettled(shown.map(async function(tokenId, i) {
-    try {
-      var results = await Promise.all([fetchImageRGBA(tokenId), fetchTokenMeta(tokenId)]);
-      var rgba = results[0], meta = results[1];
-      var slot = wallSlots[i];
-      if (!slot) return;
-      var art = buildVoxelArtwork(tokenId, rgba, {
-        type: meta?.type || "human",
-        ap: meta?.actionPoints || null,
-      });
-      art.position.copy(slot.pos);
-      art.rotation.y = slot.ry;
-      if (phs[i]) { artGroup.remove(phs[i]); dispose(phs[i]); }
-      artGroup.add(art);
-    } catch (ignored) {}
-    done++;
-    setProgress(done, shown.length, "loading " + done + " / " + shown.length);
-  }));
+  var BATCH = 8;
+  for (var bi = 0; bi < shown.length; bi += BATCH) {
+    var batch = shown.slice(bi, bi + BATCH);
+    var batchIdxStart = bi;
+    await Promise.allSettled(batch.map(async function(tokenId, j) {
+      var i = batchIdxStart + j;
+      try {
+        var results = await Promise.all([fetchImageRGBA(tokenId), fetchTokenMeta(tokenId)]);
+        var rgba = results[0], meta = results[1];
+        var slot = wallSlots[i];
+        if (!slot) return;
+        var art = buildVoxelArtwork(tokenId, rgba, {
+          type: meta?.type || "human",
+          ap: meta?.actionPoints || null,
+        });
+        art.position.copy(slot.pos);
+        art.rotation.y = slot.ry;
+        if (phs[i]) { artGroup.remove(phs[i]); dispose(phs[i]); }
+        artGroup.add(art);
+      } catch (ignored) {}
+      done++;
+      setProgress(done, shown.length, "loading " + done + " / " + shown.length);
+    }));
+  }
 
   setProgress(shown.length, shown.length, "");
 }
@@ -531,10 +697,74 @@ aboutModal.addEventListener("click", function(e) { if (e.target === aboutModal) 
 exitBtn.addEventListener("click", exitMuseum);
 loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
 walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
+document.getElementById("interaction-hint").addEventListener("click", function(e) { e.stopPropagation(); pressButton(); });
+
+/* ── Theme toggle ─────────────────────────────────────────────────────────── */
+(function initTheme() {
+  var saved = localStorage.getItem("normuseum-theme");
+  if (saved === "dark" || (!saved && matchMedia("(prefers-color-scheme: dark)").matches)) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+themeToggle.addEventListener("click", function() {
+  var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+  var next = isDark ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  localStorage.setItem("normuseum-theme", next);
+});
+
+/* ── Fullscreen toggle ────────────────────────────────────────────────────── */
+function toggleFullscreen() {
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    var el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
+}
+fullscreenBtn.addEventListener("click", toggleFullscreen);
+
+/* ── Footstep audio (generated via AudioContext) ──────────────────────────── */
+var audioCtx = null;
+var stepCooldown = 0;
+var STEP_INTERVAL = 0.38;
+var STEP_INTERVAL_SPRINT = 0.26;
+
+function playFootstep() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator();
+  var gain = audioCtx.createGain();
+  var filter = audioCtx.createBiquadFilter();
+
+  // Soft thud — low-passed noise-like tone
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(60 + Math.random() * 30, now);
+  osc.frequency.exponentialRampToValueAtTime(30, now + 0.08);
+
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(200, now);
+  filter.Q.setValueAtTime(0.7, now);
+
+  gain.gain.setValueAtTime(0.06, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.12);
+}
 
 /* ── Pointer lock (desktop) ───────────────────────────────────────────────── */
 if (!isTouch && controls) {
-  renderer.domElement.addEventListener("click", function() { if (inMuseum) controls.lock(); });
+  renderer.domElement.addEventListener("click", function() {
+    if (!inMuseum) return;
+    if (controls.isLocked) tryInteract();
+    else controls.lock();
+  });
   controls.addEventListener("lock", function()   { document.body.classList.add("locked"); });
   controls.addEventListener("unlock", function() { document.body.classList.remove("locked"); });
 }
@@ -548,6 +778,8 @@ if (!isTouch) {
     if (e.code === "KeyA") keys.a = true;
     if (e.code === "KeyD") keys.d = true;
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+    if (e.code === "KeyF" && inMuseum) toggleFullscreen();
+    if (e.code === "KeyE" && inMuseum) tryInteract();
   });
   window.addEventListener("keyup", function(e) {
     if (e.code === "KeyW") keys.w = false;
@@ -627,6 +859,9 @@ var vel = new THREE.Vector3();
 var dir = new THREE.Vector3();
 
 function move(dt) {
+  var isMoving = false;
+  var isSprinting = false;
+
   if (isTouch) {
     camera.rotation.y = mobileYaw;
     camera.rotation.x = mobilePitch;
@@ -637,24 +872,38 @@ function move(dt) {
       var fwd = -ny * spd * dt, right = nx * spd * dt;
       camera.position.x += Math.sin(mobileYaw) * fwd + Math.cos(mobileYaw) * right;
       camera.position.z += Math.cos(mobileYaw) * fwd - Math.sin(mobileYaw) * right;
+      isMoving = Math.abs(nx) > 0.15 || Math.abs(ny) > 0.15;
     }
     camera.position.y = 1.7;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x, -(WALL_X - 0.6), WALL_X - 0.6);
     camera.position.z = THREE.MathUtils.clamp(camera.position.z, -(currentRoomLen / 2 - 0.6), currentRoomLen / 2 - 0.6);
   } else {
-    var spd2 = keys.shift ? 6.5 : 3.2;
+    isSprinting = keys.shift;
+    var spd2 = isSprinting ? 6.5 : 3.2;
     vel.set(0, 0, 0);
     dir.z = Number(keys.w) - Number(keys.s);
     dir.x = Number(keys.d) - Number(keys.a);
     dir.normalize();
     if (keys.w || keys.s) vel.z = dir.z * spd2 * dt;
     if (keys.a || keys.d) vel.x = dir.x * spd2 * dt;
+    isMoving = keys.w || keys.s || keys.a || keys.d;
     controls.moveRight(vel.x);
     controls.moveForward(vel.z);
     var p = controls.getObject().position;
     p.y = 1.7;
     p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
     p.z = THREE.MathUtils.clamp(p.z, -(currentRoomLen / 2 - 0.6), currentRoomLen / 2 - 0.6);
+  }
+
+  // Footstep sounds
+  if (isMoving) {
+    stepCooldown -= dt;
+    if (stepCooldown <= 0) {
+      playFootstep();
+      stepCooldown = isSprinting ? STEP_INTERVAL_SPRINT : STEP_INTERVAL;
+    }
+  } else {
+    stepCooldown = 0;
   }
 }
 
@@ -682,6 +931,7 @@ function animate() {
   var shouldMove = isTouch ? inMuseum : (controls && controls.isLocked);
   if (shouldMove) move(dt);
   tickReveal(dt);
+  checkButtonInteraction();
   renderer.render(scene, camera);
 }
 animate();
