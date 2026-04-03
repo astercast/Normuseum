@@ -71,7 +71,7 @@ camera.position.set(0, 1.7, 2);
 let controls = null;
 if (!isTouch) {
   controls = new PointerLockControls(camera, renderer.domElement);
-  scene.add(controls.getObject());
+  scene.add(camera);
 } else {
   scene.add(camera);
   camera.rotation.order = "YXZ";
@@ -889,7 +889,7 @@ function move(dt) {
     isMoving = keys.w || keys.s || keys.a || keys.d;
     controls.moveRight(vel.x);
     controls.moveForward(vel.z);
-    var p = controls.getObject().position;
+    var p = camera.position;
     p.y = 1.7;
     p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
     p.z = THREE.MathUtils.clamp(p.z, -(currentRoomLen / 2 - 0.6), currentRoomLen / 2 - 0.6);
