@@ -57,10 +57,10 @@ var SLURP_DISTANCE = 1.6;
 var SLURP_COOLDOWN = 4;
 
 /* ── Caches ────────────────────────────────────────────────────────────────── */
-var imageCache = new Map();
-var metaCache  = new Map();
-var reusableOC = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(GRID, GRID) : null;
-var reusableOCCtx = reusableOC ? reusableOC.getContext("2d", { willReadFrequently: true }) : null;
+var imageCache    = new Map();  // tokenId → Uint8ClampedArray
+var metaCache     = new Map();  // tokenId → JSON
+var imageInFlight = new Map();  // tokenId → Promise — prevents concurrent duplicate fetches
+var metaInFlight  = new Map();  // tokenId → Promise
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -95,27 +95,27 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace        = THREE.SRGBColorSpace;
 renderer.toneMapping             = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure     = 1.1;
+renderer.toneMappingExposure     = 0.78;
 renderer.shadowMap.enabled       = true;
 renderer.shadowMap.type          = THREE.PCFSoftShadowMap;
 
 /* ── Scene ────────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#eae6df");
-scene.fog = new THREE.FogExp2("#eae6df", 0.012);
+scene.background = new THREE.Color("#ddd5c8");
+scene.fog = new THREE.FogExp2("#ddd5c8", 0.012);
 
 /* ── Environment map (warm studio for PBR reflections) ────────────────────── */
 (function generateEnvironment() {
   var pmrem = new THREE.PMREMGenerator(renderer);
   var envScene = new THREE.Scene();
-  envScene.background = new THREE.Color("#f5efe8");
-  var topLight = new THREE.DirectionalLight(0xfff8f0, 2.5);
+  envScene.background = new THREE.Color("#e8dfd2");
+  var topLight = new THREE.DirectionalLight(0xfff8f0, 1.4);
   topLight.position.set(0, 10, 0);
   envScene.add(topLight);
-  var sideLight = new THREE.DirectionalLight(0xffeedd, 1.0);
+  var sideLight = new THREE.DirectionalLight(0xffeedd, 0.65);
   sideLight.position.set(5, 3, 5);
   envScene.add(sideLight);
-  envScene.add(new THREE.AmbientLight(0xffe8d0, 0.6));
+  envScene.add(new THREE.AmbientLight(0xffe8d0, 0.4));
   var ground = new THREE.Mesh(
     new THREE.PlaneGeometry(200, 200),
     new THREE.MeshStandardMaterial({ color: "#ddd6cb" })
@@ -142,39 +142,39 @@ if (!isTouch) {
 }
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0xfff8f0, 0.55));
-const sun = new THREE.DirectionalLight(0xfff0dd, 0.5);
+scene.add(new THREE.AmbientLight(0xfff2e8, 0.26));
+const sun = new THREE.DirectionalLight(0xfff0dd, 0.28);
 sun.position.set(5, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.far = 60;
 sun.shadow.bias = -0.001;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xfff8f0, 0xd4c4a8, 0.35));
+scene.add(new THREE.HemisphereLight(0xffe8d0, 0xb0a090, 0.18));
 
 /* ── Shared materials (upgraded PBR) ──────────────────────────────────────── */
 const floorMat = new THREE.MeshPhysicalMaterial({
-  color: "#d4cbb8", roughness: 0.08, metalness: 0.12,
-  clearcoat: 0.3, clearcoatRoughness: 0.2, reflectivity: 0.5,
+  color: "#c4b89e", roughness: 0.06, metalness: 0.08,
+  clearcoat: 0.55, clearcoatRoughness: 0.1, reflectivity: 0.65,
 });
-const wallMat  = new THREE.MeshStandardMaterial({ color: "#f0ece5", roughness: 0.88 });
-const panelMat = new THREE.MeshStandardMaterial({ color: "#e6e0d6", roughness: 0.72, metalness: 0.02 });
-const ceilMat  = new THREE.MeshStandardMaterial({ color: "#faf8f4", roughness: 0.94 });
-const mouldMat = new THREE.MeshStandardMaterial({ color: "#ddd6c8", roughness: 0.4, metalness: 0.1 });
-const baseMat  = new THREE.MeshStandardMaterial({ color: "#d6cfc2", roughness: 0.55, metalness: 0.06 });
-const frameMat = new THREE.MeshStandardMaterial({ color: "#9c8a6e", roughness: 0.3, metalness: 0.25 });
-const backMat  = new THREE.MeshStandardMaterial({ color: "#faf8f5", roughness: 0.95 });
-const placeMat = new THREE.MeshStandardMaterial({ color: "#eae6df", roughness: 0.95 });
-const benchMat = new THREE.MeshStandardMaterial({ color: "#2e2a24", roughness: 0.5, metalness: 0.15 });
-const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#4a4238", roughness: 0.65, metalness: 0.05 });
+const wallMat  = new THREE.MeshStandardMaterial({ color: "#e8e0d4", roughness: 0.9 });
+const panelMat = new THREE.MeshStandardMaterial({ color: "#d8cebc", roughness: 0.78, metalness: 0.01 });
+const ceilMat  = new THREE.MeshStandardMaterial({ color: "#eee8de", roughness: 0.95 });
+const mouldMat = new THREE.MeshStandardMaterial({ color: "#cfc8b8", roughness: 0.45, metalness: 0.08 });
+const baseMat  = new THREE.MeshStandardMaterial({ color: "#c8bfae", roughness: 0.58, metalness: 0.05 });
+const frameMat = new THREE.MeshStandardMaterial({ color: "#7a6a50", roughness: 0.28, metalness: 0.3 });
+const backMat  = new THREE.MeshStandardMaterial({ color: "#f0ebe2", roughness: 0.95 });
+const placeMat = new THREE.MeshStandardMaterial({ color: "#ddd5c8", roughness: 0.95 });
+const benchMat = new THREE.MeshStandardMaterial({ color: "#28241e", roughness: 0.5, metalness: 0.18 });
+const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#3c3228", roughness: 0.68, metalness: 0.04 });
 const corrFloorMat = new THREE.MeshPhysicalMaterial({
-  color: "#bfb29c", roughness: 0.06, metalness: 0.15,
-  clearcoat: 0.35, clearcoatRoughness: 0.15, reflectivity: 0.55,
+  color: "#b8aa90", roughness: 0.05, metalness: 0.12,
+  clearcoat: 0.5, clearcoatRoughness: 0.1, reflectivity: 0.65,
 });
-const archMat  = new THREE.MeshStandardMaterial({ color: "#cec8ba", roughness: 0.45, metalness: 0.12 });
-const inlayMat = new THREE.MeshStandardMaterial({ color: "#a8997f", roughness: 0.15, metalness: 0.18 });
-const beamMat  = new THREE.MeshStandardMaterial({ color: "#ede8e0", roughness: 0.7, metalness: 0.04 });
-const trimMat  = new THREE.MeshStandardMaterial({ color: "#cec8ba", roughness: 0.5, metalness: 0.18 });
+const archMat  = new THREE.MeshStandardMaterial({ color: "#c8c0b0", roughness: 0.48, metalness: 0.1 });
+const inlayMat = new THREE.MeshStandardMaterial({ color: "#9e8c6c", roughness: 0.12, metalness: 0.32 });
+const beamMat  = new THREE.MeshStandardMaterial({ color: "#e4ddd2", roughness: 0.75, metalness: 0.03 });
+const trimMat  = new THREE.MeshStandardMaterial({ color: "#c8c0b0", roughness: 0.52, metalness: 0.15 });
 
 /* ── Shared geometries (reduces GC churn) ─────────────────────────────────── */
 const sharedVoxelGeo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
@@ -211,7 +211,7 @@ function planLayout(totalCount) {
     rooms.push({
       cx: cx, zStart: zStart, zEnd: zEnd, roomLen: roomLen,
       slotsPerSide: slotsPerSide, slotOffset: slotsUsed, slotCount: count,
-      built: false, loaded: false, loading: false,
+      built: false, loaded: false, loading: false, prefetching: false, _loadToken: null,
       group: null, corridorGroup: null, artSlots: [],
     });
 
@@ -367,7 +367,7 @@ function buildRoom(ri) {
       var tr = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.06, t[3]), trimMat);
       tr.position.set(cx + t[0], ROOM_H - 0.02, sz + t[1]); g.add(tr);
     });
-    var skyLight = new THREE.PointLight(0xc8e4f5, 0.5, 9);
+    var skyLight = new THREE.PointLight(0xc8e4f5, 0.55, 11);
     skyLight.position.set(cx, ROOM_H - 0.1, sz); g.add(skyLight);
   }
 
@@ -376,16 +376,16 @@ function buildRoom(ri) {
   var lightsPerSide = Math.max(1, Math.ceil(room.slotsPerSide / 3));
   for (var li = 0; li < lightsPerSide; li++) {
     var lz = slotZStart - ((li + 0.5) * room.slotsPerSide / lightsPerSide) * SLOT_SPACING;
-    var sl = new THREE.RectAreaLight(0xfff0dd, 5.5, 2.8, 0.5);
+    var sl = new THREE.RectAreaLight(0xffe4b8, 3.8, 2.8, 0.5);
     sl.position.set(cx - WALL_X + 1.8, ROOM_H - 0.3, lz);
     sl.lookAt(cx - WALL_X + 0.1, 1.8, lz); g.add(sl);
-    var sr = new THREE.RectAreaLight(0xfff0dd, 5.5, 2.8, 0.5);
+    var sr = new THREE.RectAreaLight(0xffe4b8, 3.8, 2.8, 0.5);
     sr.position.set(cx + WALL_X - 1.8, ROOM_H - 0.3, lz);
     sr.lookAt(cx + WALL_X - 0.1, 1.8, lz); g.add(sr);
   }
 
   /* Ambient fill (single point light per room) */
-  var fillLight = new THREE.PointLight(0xfff4e8, 0.35, Math.max(12, room.roomLen * 0.6));
+  var fillLight = new THREE.PointLight(0xfff4e8, 0.16, Math.max(14, room.roomLen * 0.7));
   fillLight.position.set(cx, ROOM_H - 0.2, zMid); g.add(fillLight);
 
   /* Bench */
@@ -488,6 +488,7 @@ function unloadRoomArt(ri) {
   var room = rooms[ri];
   if (!room.loaded && !room.loading) return;
   room.loading = false;
+  room._loadToken = null;  /* invalidate any running loadRoomArt coroutine for this room */
 
   var toRemove = [];
   for (var i = 0; i < artGroup.children.length; i++) {
@@ -543,7 +544,7 @@ function buildCorridor(ri) {
   addCorridorSegment(g, cx2, (zMid + z2) / 2, CORR_W, Math.abs(zMid - z2) + 1);
 
   /* Single corridor light */
-  var corrLight = new THREE.PointLight(0xfff4e8, 0.4, 12);
+  var corrLight = new THREE.PointLight(0xffe8c8, 0.22, 14);
   corrLight.position.set((cx1 + cx2) / 2, ROOM_H - 0.2, zMid);
   g.add(corrLight);
 
@@ -723,7 +724,13 @@ function dispose(obj) {
         c.geometry?.dispose();
       }
       [].concat(c.material).forEach(function(m) {
-        if (m && !isSharedMaterial(m)) m?.dispose();
+        if (m && !isSharedMaterial(m)) {
+          /* Three.js material.dispose() does NOT auto-dispose texture maps — do it manually */
+          if (m.map) m.map.dispose();
+          if (m.emissiveMap) m.emissiveMap.dispose();
+          if (m.alphaMap) m.alphaMap.dispose();
+          m.dispose();
+        }
       });
     }
   });
@@ -743,12 +750,14 @@ function yieldToFrame() {
 /* ── Prefetch (network only, no voxel building) ───────────────────────────── */
 function prefetchRoomImages(ri) {
   var room = rooms[ri];
-  if (!room || room.loaded || room.loading) return;
+  /* prefetching flag ensures we only fire one batch per room, not every 0.25s */
+  if (!room || room.loaded || room.loading || room.prefetching) return;
+  room.prefetching = true;
   var tokens = allTokenIds.slice(room.slotOffset, room.slotOffset + room.slotCount);
   for (var i = 0; i < tokens.length; i++) {
-    var tid = tokens[i];
-    if (!imageCache.has(tid)) fetchImageRGBA(tid).catch(function() {});
-    if (!metaCache.has(tid)) fetchTokenMeta(tid).catch(function() {});
+    /* fetchImageRGBA/fetchTokenMeta deduplicate in-flight calls automatically */
+    fetchImageRGBA(tokens[i]).catch(function() {});
+    fetchTokenMeta(tokens[i]).catch(function() {});
   }
 }
 
@@ -757,6 +766,13 @@ async function loadRoomArt(ri) {
   var room = rooms[ri];
   if (room.loaded || room.loading || !room.built) return;
   room.loading = true;
+  /* Cancellation token: if unloadRoomArt runs while we're suspended, it sets
+     room._loadToken = null, so our stale myToken reference will no longer match
+     and every cancellation check below will exit the coroutine safely. */
+  var myToken = {};
+  room._loadToken = myToken;
+  function cancelled() { return room._loadToken !== myToken; }
+
   var tokens = allTokenIds.slice(room.slotOffset, room.slotOffset + room.slotCount);
 
   /* Show placeholders immediately */
@@ -771,7 +787,7 @@ async function loadRoomArt(ri) {
   var NET_BATCH = 6;
   var fetched = new Array(tokens.length);
   for (var nb = 0; nb < tokens.length; nb += NET_BATCH) {
-    if (!room.loading) return;
+    if (cancelled()) return;
     var slice = tokens.slice(nb, nb + NET_BATCH);
     var results = await Promise.allSettled(slice.map(function(tid) {
       return Promise.all([fetchImageRGBA(tid), fetchTokenMeta(tid)]);
@@ -783,7 +799,7 @@ async function loadRoomArt(ri) {
 
   /* Build voxel meshes one-at-a-time, yielding to the renderer between each */
   for (var idx = 0; idx < tokens.length; idx++) {
-    if (!room.loading) return;
+    if (cancelled()) return;
     var data = fetched[idx];
     if (!data) continue;
     var slot = room.artSlots[idx];
@@ -804,7 +820,7 @@ async function loadRoomArt(ri) {
   }
 
   setProgress(1, 1, "");
-  if (room.loading) {
+  if (!cancelled()) {
     room.loaded = true;
     room.loading = false;
   }
@@ -1113,35 +1129,45 @@ async function fetchOwnedTokenIds(address) {
 
 async function fetchTokenMeta(tokenId) {
   if (metaCache.has(tokenId)) return metaCache.get(tokenId);
-  try {
-    var r = await fetch(NORMIES_API + "/normie/" + tokenId + "/canvas/info", { cache: "no-store" });
-    var data = r.ok ? await r.json() : {};
-    metaCache.set(tokenId, data);
-    return data;
-  } catch (e) { return {}; }
+  if (metaInFlight.has(tokenId)) return metaInFlight.get(tokenId);
+  var p = (async function() {
+    try {
+      var r = await fetch(NORMIES_API + "/normie/" + tokenId + "/canvas/info", { cache: "no-store" });
+      var data = r.ok ? await r.json() : {};
+      metaCache.set(tokenId, data);
+      return data;
+    } catch (e) { return {}; }
+    finally { metaInFlight.delete(tokenId); }
+  })();
+  metaInFlight.set(tokenId, p);
+  return p;
 }
 
 async function fetchImageRGBA(tokenId) {
   if (imageCache.has(tokenId)) return imageCache.get(tokenId);
-  var res = await fetch(NORMIES_API + "/normie/" + tokenId + "/image.png", { cache: "no-store" });
-  if (!res.ok) throw new Error("image " + res.status);
-  var bmp = await createImageBitmap(await res.blob());
-  var ctx;
-  if (reusableOC) {
-    reusableOCCtx.clearRect(0, 0, GRID, GRID);
-    reusableOCCtx.imageSmoothingEnabled = false;
-    reusableOCCtx.drawImage(bmp, 0, 0, GRID, GRID);
-    ctx = reusableOCCtx;
-  } else {
-    var oc = new OffscreenCanvas(GRID, GRID);
-    ctx = oc.getContext("2d", { willReadFrequently: true });
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(bmp, 0, 0, GRID, GRID);
-  }
-  bmp.close();
-  var data = new Uint8ClampedArray(ctx.getImageData(0, 0, GRID, GRID).data);
-  imageCache.set(tokenId, data);
-  return data;
+  if (imageInFlight.has(tokenId)) return imageInFlight.get(tokenId);
+  /* Each call gets its own OffscreenCanvas — the old shared reusableOC caused a data-race
+     when NET_BATCH > 1: concurrent fetches would overwrite each other's pixel buffer,
+     permanently storing corrupted data in imageCache. */
+  var p = (async function() {
+    try {
+      var res = await fetch(NORMIES_API + "/normie/" + tokenId + "/image.png", { cache: "no-store" });
+      if (!res.ok) throw new Error("image " + res.status);
+      var bmp = await createImageBitmap(await res.blob());
+      var oc = new OffscreenCanvas(GRID, GRID);
+      var ctx = oc.getContext("2d", { willReadFrequently: true });
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(bmp, 0, 0, GRID, GRID);
+      bmp.close();
+      var data = new Uint8ClampedArray(ctx.getImageData(0, 0, GRID, GRID).data);
+      imageCache.set(tokenId, data);
+      return data;
+    } finally {
+      imageInFlight.delete(tokenId);
+    }
+  })();
+  imageInFlight.set(tokenId, p);
+  return p;
 }
 
 /* ── ENS resolver ─────────────────────────────────────────────────────────── */
@@ -1223,7 +1249,11 @@ async function loadMuseumForWallets(rawInput) {
   setStatus("scanning wallet" + (addresses.length > 1 ? "s" : "") + "\u2026");
 
   try {
-    var per = await Promise.all(addresses.map(fetchOwnedTokenIds));
+    /* Sequential scans avoid flooding RPCs with 50 concurrent eth_call requests */
+    var per = [];
+    for (var wi = 0; wi < addresses.length; wi++) {
+      per.push(await fetchOwnedTokenIds(addresses[wi]));
+    }
     allTokenIds = [...new Set(per.flat())];
   } catch (e) { setStatus("wallet lookup failed: " + e.message, true); setBusy(false); return; }
 
