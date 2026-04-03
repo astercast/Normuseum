@@ -1,0 +1,174 @@
+:root {
+  --ink: #0b0b0b;
+  --ink-soft: #2a2a2a;
+  --paper: #f5f5f1;
+  --panel: rgba(244, 244, 240, 0.86);
+  --line: rgba(15, 15, 15, 0.2);
+  --accent: #111111;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(circle at 20% 10%, #f9f9f7 0%, #ebeae6 55%, #e2e0db 100%);
+  color: var(--ink);
+  font-family: "Space Mono", "IBM Plex Mono", monospace;
+}
+
+#scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.panel {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  width: min(980px, calc(100vw - 28px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(4px);
+  padding: 12px;
+  box-shadow: 0 8px 34px rgba(0, 0, 0, 0.09);
+}
+
+.panel-small {
+  top: auto;
+  left: auto;
+  right: 14px;
+  bottom: 14px;
+  width: auto;
+  min-width: 190px;
+  font-size: 11px;
+  line-height: 1.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.brand {
+  font-size: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.sub {
+  margin-top: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+}
+
+.controls-row {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 160px minmax(200px, 1fr) 140px;
+  gap: 8px;
+}
+
+.btn,
+input {
+  border: 1px solid var(--ink);
+  background: #fff;
+  color: var(--ink);
+  height: 38px;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.btn {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.btn:hover {
+  background: #111;
+  color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+}
+
+input {
+  padding: 0 10px;
+}
+
+.status {
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.meta {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+#crosshair {
+  position: fixed;
+  z-index: 8;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+#crosshair::before,
+#crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+#crosshair::before {
+  left: 6px;
+  top: 0;
+  width: 2px;
+  height: 14px;
+}
+
+#crosshair::after {
+  top: 6px;
+  left: 0;
+  width: 14px;
+  height: 2px;
+}
+
+body.locked #crosshair {
+  opacity: 1;
+}
+
+@media (max-width: 900px) {
+  .controls-row {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    width: calc(100vw - 16px);
+    left: 8px;
+    top: 8px;
+    padding: 10px;
+  }
+
+  .panel-small {
+    right: 8px;
+    bottom: 8px;
+  }
+}

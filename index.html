@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Normuseum</title>
+    <meta
+      name="description"
+      content="Normuseum: a minimalist first-person voxel gallery for your Normies wallet"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <div id="hud" class="panel">
+        <div class="brand">normuseum</div>
+        <div class="sub">voxel gallery for normies</div>
+
+        <div class="controls-row">
+          <button id="connectBtn" class="btn">connect wallet</button>
+          <input id="walletInput" type="text" placeholder="or paste 0x wallet" />
+          <button id="loadBtn" class="btn btn-ghost">load museum</button>
+        </div>
+
+        <div id="status" class="status">Connect a wallet or paste an address.</div>
+        <div id="meta" class="meta"></div>
+      </div>
+
+      <div id="help" class="panel panel-small">
+        <div>click scene to lock cursor</div>
+        <div>move: WASD</div>
+        <div>look: mouse</div>
+        <div>sprint: shift</div>
+        <div>unlock: ESC</div>
+      </div>
+
+      <div id="crosshair"></div>
+      <canvas id="scene"></canvas>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "normuseum",
+  "version": "0.1.0",
+  "description": "Normuseum: first-person 3D voxel gallery for Normies",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "vite": "^8.0.3"
+  }
+}
