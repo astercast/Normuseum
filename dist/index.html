@@ -8,8 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/index-B7iT9pA6.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DosjB5k7.css">
+    <script type="module" crossorigin src="./assets/index-DjIpZngq.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-XljxPtHi.css">
   </head>
   <body>
     <canvas id="scene" role="img" aria-label="3D gallery view"></canvas>
@@ -60,21 +60,41 @@
       <div id="hud-bar">
         <span class="hud-brand">normuseum</span>
         <span id="hud-meta" class="hud-meta"></span>
-        <button id="musicBtn" class="hud-btn music-btn" type="button" aria-label="Toggle music">
-          <svg class="music-icon music-icon--off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-          <svg class="music-icon music-icon--on" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        </button>
+        <div class="audio-wrap">
+          <button id="musicBtn" class="hud-btn music-btn" type="button" aria-label="Audio settings">
+            <svg class="music-icon music-icon--off" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+            <svg class="music-icon music-icon--on" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          </button>
+          <div id="audioPanel" class="audio-panel">
+            <button id="musicToggleBtn" class="audio-toggle" type="button">
+              <span class="audio-toggle-label">music</span>
+              <span class="audio-toggle-state" id="musicState">off</span>
+            </button>
+            <label class="audio-slider-row">
+              <span>music vol</span>
+              <input id="musicVolumeSlider" type="range" min="0" max="100" value="25" />
+            </label>
+            <label class="audio-slider-row">
+              <span>sfx vol</span>
+              <input id="sfxVolumeSlider" type="range" min="0" max="100" value="50" />
+            </label>
+          </div>
+        </div>
         <button id="fullscreenBtn" class="hud-btn" type="button" aria-label="Toggle fullscreen">
           <svg class="fs-icon fs-icon--enter" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
           <svg class="fs-icon fs-icon--exit" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
         </button>
+        <button id="helpBtn" class="hud-btn" type="button" aria-label="Controls help">
+          <span style="font-size:14px;line-height:1">?</span>
+        </button>
         <button id="exitBtn" class="hud-exit" type="button">✕ exit</button>
       </div>
-      <div id="hud-controls">
+      <div id="helpPanel">
         <div class="ctrl"><kbd>W A S D</kbd><span>move</span></div>
         <div class="ctrl"><kbd>mouse</kbd><span>look</span></div>
         <div class="ctrl"><kbd>shift</kbd><span>sprint</span></div>
-        <div class="ctrl"><kbd>E</kbd><span>interact</span></div>
+        <div class="ctrl"><kbd>space</kbd><span>jump</span></div>
+        <div class="ctrl"><kbd>E</kbd><span>interact / sit</span></div>
         <div class="ctrl"><kbd>F</kbd><span>fullscreen</span></div>
         <div class="ctrl"><kbd>M</kbd><span>music</span></div>
         <div class="ctrl"><kbd>esc</kbd><span>unlock</span></div>
