@@ -520,10 +520,10 @@ function playButtonClick() {
 
 /* ── API calls ────────────────────────────────────────────────────────────── */
 const RPC_URLS = [
-  "https://cloudflare-eth.com",
-  "https://rpc.ankr.com/eth",
   "https://eth.llamarpc.com",
   "https://ethereum.publicnode.com",
+  "https://1rpc.io/eth",
+  "https://eth.meowrpc.com",
 ];
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
@@ -543,53 +543,44 @@ async function rpcCall(method, params) {
 }
 
 function encodeOwnerOf(tokenId) {
-  // ownerOf(uint256) selector = 0x6352211e
   return "0x6352211e" + tokenId.toString(16).padStart(64, "0");
 }
 
-function encodeMulticall(calls) {
-  // aggregate3(Call3[]) selector = 0x82ad56cb
-  // Call3 = (address target, bool allowFailure, bytes callData)
-  var offset = 64; // offset to dynamic array
-  var countHex = calls.length.toString(16).padStart(64, "0");
-  var items = "";
-  var datas = "";
-  var dataOffset = calls.length * 96; // each tuple is 3*32 = 96 bytes in head
+function encodeTryAggregate(calls) {
+  // tryAggregate(bool requireSuccess, (address,bytes)[] calls)
+  // selector: 0xbce38bd7
+  var hex = "0xbce38bd7";
+  hex += "0".repeat(64); // requireSuccess = false
+  hex += (64).toString(16).padStart(64, "0"); // offset to array
+  hex += calls.length.toString(16).padStart(64, "0"); // array length
+  var tupleHeadSize = calls.length * 32;
+  var tupleBodies = "";
+  var offsets = "";
   for (var i = 0; i < calls.length; i++) {
-    var callData = calls[i].data.slice(2); // remove 0x
-    var callDataLen = callData.length / 2;
-    // target (address)
-    items += calls[i].target.slice(2).toLowerCase().padStart(64, "0");
-    // allowFailure (bool) = true
-    items += "0000000000000000000000000000000000000000000000000000000000000001";
-    // offset to callData (relative to start of tuple array)
-    items += (dataOffset + datas.length / 2).toString(16).padStart(64, "0");
-    // callData: length + padded data
-    datas += callDataLen.toString(16).padStart(64, "0");
-    datas += callData + "0".repeat((64 - (callData.length % 64)) % 64);
+    offsets += (tupleHeadSize + tupleBodies.length / 2).toString(16).padStart(64, "0");
+    var body = calls[i].target.slice(2).padStart(64, "0");
+    body += (64).toString(16).padStart(64, "0"); // offset to bytes
+    var cd = calls[i].data.slice(2);
+    body += (cd.length / 2).toString(16).padStart(64, "0"); // bytes length
+    body += cd + "0".repeat((64 - (cd.length % 64)) % 64); // padded data
+    tupleBodies += body;
   }
-  return "0x82ad56cb" +
-    offset.toString(16).padStart(64, "0") +
-    countHex +
-    items +
-    datas;
+  hex += offsets + tupleBodies;
+  return hex;
 }
 
-function decodeMulticallResult(hex) {
-  // Returns array of { success: bool, data: string }
+function decodeTryAggregateResult(hex) {
   var d = hex.slice(2);
-  var arrayOffset = parseInt(d.slice(0, 64), 16) * 2;
-  var count = parseInt(d.slice(arrayOffset, arrayOffset + 64), 16);
+  var arrOff = parseInt(d.slice(0, 64), 16) * 2;
+  var count = parseInt(d.slice(arrOff, arrOff + 64), 16);
   var results = [];
-  var tupleStart = arrayOffset + 64;
   for (var i = 0; i < count; i++) {
-    var entryOffset = parseInt(d.slice(tupleStart + i * 64, tupleStart + i * 64 + 64), 16) * 2;
-    var absOffset = tupleStart + entryOffset;
-    var success = parseInt(d.slice(absOffset, absOffset + 64), 16) === 1;
-    var dataOffset2 = parseInt(d.slice(absOffset + 64, absOffset + 128), 16) * 2;
-    var dataLen = parseInt(d.slice(absOffset + dataOffset2, absOffset + dataOffset2 + 64), 16);
-    var data = "0x" + d.slice(absOffset + dataOffset2 + 64, absOffset + dataOffset2 + 64 + dataLen * 2);
-    results.push({ success: success, data: data });
+    var elemOff = parseInt(d.slice(arrOff + 64 + i * 64, arrOff + 64 + i * 64 + 64), 16) * 2;
+    var abs = arrOff + 64 + elemOff;
+    var success = parseInt(d.slice(abs, abs + 64), 16) === 1;
+    var dataOff = parseInt(d.slice(abs + 64, abs + 128), 16) * 2;
+    var owner = success ? "0x" + d.slice(abs + dataOff + 64 + 24, abs + dataOff + 64 + 64).toLowerCase() : "";
+    results.push({ success: success, owner: owner });
   }
   return results;
 }
@@ -603,14 +594,11 @@ async function fetchOwnedTokenIds(address) {
     for (var t = start; t < start + BATCH && t < 10000; t++) {
       calls.push({ target: NORMIES_CONTRACT, data: encodeOwnerOf(t) });
     }
-    var encoded = encodeMulticall(calls);
+    var encoded = encodeTryAggregate(calls);
     var result = await rpcCall("eth_call", [{ to: MULTICALL3, data: encoded }, "latest"]);
-    var decoded = decodeMulticallResult(result);
+    var decoded = decodeTryAggregateResult(result);
     for (var j = 0; j < decoded.length; j++) {
-      if (decoded[j].success && decoded[j].data.length >= 42) {
-        var owner = "0x" + decoded[j].data.slice(26, 66).toLowerCase();
-        if (owner === addrLower) owned.push(start + j);
-      }
+      if (decoded[j].success && decoded[j].owner === addrLower) owned.push(start + j);
     }
     setStatus("scanning wallet\u2026 " + Math.min(start + BATCH, 10000) + " / 10000");
   }
