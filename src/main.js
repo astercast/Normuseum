@@ -8,12 +8,12 @@ RectAreaLightUniformsLib.init();
 /* ── Constants ────────────────────────────────────────────────────────────── */
 const NORMIES_CONTRACT = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
 const NORMIES_API      = "https://api.normies.art";
-const VOXEL_SIZE       = 0.048;
+const VOXEL_SIZE       = 0.055;
 const GRID             = 40;
-const CELL             = 1.98 / GRID;
-const ART_W = 2.12, ART_H = 2.12;
-const ROOM_W = 14, ROOM_H = 4.8;
-const SLOT_SPACING = 3.2;
+const CELL             = 2.2 / GRID;
+const ART_W = 2.4, ART_H = 2.4;
+const ROOM_W = 16, ROOM_H = 5.2;
+const SLOT_SPACING = 3.6;
 
 /* ── Frame toggle state ───────────────────────────────────────────────────── */
 let framesVisible = false;
@@ -54,14 +54,14 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.outputColorSpace        = THREE.SRGBColorSpace;
 renderer.toneMapping             = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure     = 1.05;
+renderer.toneMappingExposure     = 1.15;
 renderer.shadowMap.enabled       = true;
 renderer.shadowMap.type          = THREE.PCFShadowMap;
 
-/* ── Scene ────────────────────────────────────────────────────────────────── */
+/* ── Scene ──────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#e3e5e4");
-scene.fog = new THREE.FogExp2("#e8eae9", 0.022);
+scene.background = new THREE.Color("#f0ede8");
+scene.fog = new THREE.FogExp2("#f0ede8", 0.012);
 
 /* ── Camera ───────────────────────────────────────────────────────────────── */
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 150);
@@ -78,22 +78,32 @@ if (!isTouch) {
 }
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0xfaf9f7, 0.5));
-const sun = new THREE.DirectionalLight(0xfff5e8, 0.35);
-sun.position.set(3, 14, 6);
+scene.add(new THREE.AmbientLight(0xfff8f0, 0.7));
+const sun = new THREE.DirectionalLight(0xfff0dd, 0.5);
+sun.position.set(5, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.far = 80;
 scene.add(sun);
+// Warm fill from below for ambient bounce
+const fill = new THREE.HemisphereLight(0xfff8f0, 0xd4c4a8, 0.35);
+scene.add(fill);
 
 /* ── Shared materials ─────────────────────────────────────────────────────── */
-const floorMat = new THREE.MeshStandardMaterial({ color: "#d0d2d1", roughness: 0.88 });
-const wallMat  = new THREE.MeshStandardMaterial({ color: "#f8f8f6", roughness: 0.92 });
-const ceilMat  = new THREE.MeshStandardMaterial({ color: "#fafafa", roughness: 0.96 });
-const mouldMat = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.82 });
-const baseMat  = new THREE.MeshStandardMaterial({ color: "#e8e9e8", roughness: 0.85 });
-const frameMat = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.7, metalness: 0.06 });
-const backMat  = new THREE.MeshStandardMaterial({ color: "#fafaf8", roughness: 0.97 });
-const placeMat = new THREE.MeshStandardMaterial({ color: "#e6e8e7", roughness: 0.97 });
+// Polished marble floor
+const floorMat = new THREE.MeshStandardMaterial({ color: "#e8e0d4", roughness: 0.18, metalness: 0.08 });
+// Warm white walls
+const wallMat  = new THREE.MeshStandardMaterial({ color: "#f5f2ed", roughness: 0.85 });
+// Wainscoting / lower wall panels
+const panelMat = new THREE.MeshStandardMaterial({ color: "#ede8e0", roughness: 0.7, metalness: 0.02 });
+const ceilMat  = new THREE.MeshStandardMaterial({ color: "#faf8f4", roughness: 0.92 });
+const mouldMat = new THREE.MeshStandardMaterial({ color: "#e8e2d8", roughness: 0.55, metalness: 0.08 });
+const baseMat  = new THREE.MeshStandardMaterial({ color: "#ddd6ca", roughness: 0.6, metalness: 0.05 });
+const frameMat = new THREE.MeshStandardMaterial({ color: "#d4cdc0", roughness: 0.5, metalness: 0.12 });
+const backMat  = new THREE.MeshStandardMaterial({ color: "#faf8f5", roughness: 0.95 });
+const placeMat = new THREE.MeshStandardMaterial({ color: "#eae6df", roughness: 0.95 });
+const benchMat = new THREE.MeshStandardMaterial({ color: "#3a3530", roughness: 0.55, metalness: 0.1 });
+const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#5c5448", roughness: 0.7 });
 
 /* ── Gallery + art groups ─────────────────────────────────────────────────── */
 const galleryGroup = new THREE.Group();
@@ -114,39 +124,55 @@ function buildGallery(count) {
   }
 
   const slotsPerSide = Math.ceil(count / 2);
-  currentRoomLen = Math.max(30, slotsPerSide * SLOT_SPACING + 10);
+  currentRoomLen = Math.max(30, slotsPerSide * SLOT_SPACING + 14);
+  const HL = currentRoomLen / 2;
 
   wallSlots = [];
-  const slotZStart = -(currentRoomLen / 2 - 5);
+  const slotZStart = -(HL - 7);
   for (let i = 0; i < slotsPerSide; i++) {
     const z = slotZStart + i * SLOT_SPACING;
-    wallSlots.push({ pos: new THREE.Vector3(-WALL_X + 0.05, 2.14, z), ry: Math.PI / 2 });
-    wallSlots.push({ pos: new THREE.Vector3( WALL_X - 0.05, 2.14, z), ry: -Math.PI / 2 });
+    wallSlots.push({ pos: new THREE.Vector3(-WALL_X + 0.05, 2.1, z), ry: Math.PI / 2 });
+    wallSlots.push({ pos: new THREE.Vector3( WALL_X - 0.05, 2.1, z), ry: -Math.PI / 2 });
   }
 
-  // Floor
+  // ── Polished marble floor ──
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   galleryGroup.add(floor);
 
+  // Floor border inlay (darker marble strip along edges)
+  const inlayMat = new THREE.MeshStandardMaterial({ color: "#c4b8a4", roughness: 0.22, metalness: 0.1 });
+  [[-WALL_X + 0.8, 0], [WALL_X - 0.8, 0]].forEach(function(p) {
+    var strip = new THREE.Mesh(new THREE.PlaneGeometry(0.08, currentRoomLen - 2), inlayMat);
+    strip.rotation.x = -Math.PI / 2;
+    strip.position.set(p[0], 0.003, p[1]);
+    galleryGroup.add(strip);
+  });
+
+  // Center runner line
+  var runner = new THREE.Mesh(new THREE.PlaneGeometry(0.04, currentRoomLen - 6), inlayMat);
+  runner.rotation.x = -Math.PI / 2;
+  runner.position.set(0, 0.003, 0);
+  galleryGroup.add(runner);
+
   // Floor reflection
   const reflMat = new THREE.MeshStandardMaterial({
-    color: "#d4d6d5", roughness: 0.1, metalness: 0.35,
-    transparent: true, opacity: 0.15,
+    color: "#e0d8cc", roughness: 0.05, metalness: 0.4,
+    transparent: true, opacity: 0.12,
   });
   const refl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), reflMat);
   refl.rotation.x = -Math.PI / 2;
   refl.position.y = 0.002;
   galleryGroup.add(refl);
 
-  // Ceiling
+  // ── Ceiling ──
   const ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), ceilMat);
   ceil.rotation.x = Math.PI / 2;
   ceil.position.y = ROOM_H;
   galleryGroup.add(ceil);
 
-  // Left & right walls
+  // ── Walls ──
   const wallGeo = new THREE.PlaneGeometry(currentRoomLen, ROOM_H);
   const lw = new THREE.Mesh(wallGeo, wallMat);
   lw.rotation.y = Math.PI / 2;
@@ -162,69 +188,141 @@ function buildGallery(count) {
   // End caps
   const capGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
   const back = new THREE.Mesh(capGeo, wallMat);
-  back.position.set(0, ROOM_H / 2, -currentRoomLen / 2);
+  back.position.set(0, ROOM_H / 2, -HL);
   galleryGroup.add(back);
   const front = new THREE.Mesh(capGeo, wallMat);
   front.rotation.y = Math.PI;
-  front.position.set(0, ROOM_H / 2, currentRoomLen / 2);
+  front.position.set(0, ROOM_H / 2, HL);
   galleryGroup.add(front);
 
-  // Crown moulding
-  const mouldGeo = new THREE.BoxGeometry(currentRoomLen + 0.3, 0.065, 0.1);
-  [-WALL_X + 0.05, WALL_X - 0.05].forEach((x) => {
-    const m = new THREE.Mesh(mouldGeo, mouldMat);
-    m.position.set(0, ROOM_H - 0.032, x);
+  // ── Wainscoting (lower wall panels) ──
+  var wainH = 1.1;
+  var wainGeo = new THREE.PlaneGeometry(currentRoomLen, wainH);
+  [-WALL_X, WALL_X].forEach(function(x, idx) {
+    var w = new THREE.Mesh(wainGeo, panelMat);
+    w.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
+    w.position.set(x + (idx === 0 ? 0.01 : -0.01), wainH / 2, 0);
+    galleryGroup.add(w);
+  });
+
+  // Wainscoting cap rail (chair rail)
+  var railGeo2 = new THREE.BoxGeometry(currentRoomLen + 0.2, 0.05, 0.06);
+  [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
+    var r = new THREE.Mesh(railGeo2, mouldMat);
+    r.position.set(0, wainH, x);
+    galleryGroup.add(r);
+  });
+
+  // ── Crown moulding (ornate) ──
+  var crownProf = new THREE.BoxGeometry(currentRoomLen + 0.4, 0.12, 0.14);
+  [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
+    var m = new THREE.Mesh(crownProf, mouldMat);
+    m.position.set(0, ROOM_H - 0.06, x);
+    galleryGroup.add(m);
+  });
+  // Secondary crown step
+  var crownStep = new THREE.BoxGeometry(currentRoomLen + 0.3, 0.06, 0.08);
+  [-WALL_X + 0.04, WALL_X - 0.04].forEach(function(x) {
+    var m = new THREE.Mesh(crownStep, mouldMat);
+    m.position.set(0, ROOM_H - 0.15, x);
     galleryGroup.add(m);
   });
 
-  // Picture rail
-  const railGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.04, 0.06);
-  [-WALL_X + 0.03, WALL_X - 0.03].forEach((x) => {
-    const r = new THREE.Mesh(railGeo, mouldMat);
-    r.position.set(0, 2.9, x);
+  // ── Picture rail ──
+  var picRailGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.035, 0.05);
+  [-WALL_X + 0.025, WALL_X - 0.025].forEach(function(x) {
+    var r = new THREE.Mesh(picRailGeo, mouldMat);
+    r.position.set(0, 3.1, x);
     galleryGroup.add(r);
   });
 
-  // Baseboard
-  const skirtGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.18, 0.05);
-  [-WALL_X + 0.025, WALL_X - 0.025].forEach((x) => {
-    const s = new THREE.Mesh(skirtGeo, baseMat);
-    s.position.set(0, 0.09, x);
+  // ── Baseboard ──
+  var skirtGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.22, 0.06);
+  [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
+    var s = new THREE.Mesh(skirtGeo, baseMat);
+    s.position.set(0, 0.11, x);
     galleryGroup.add(s);
   });
 
-  // Ceiling coffers
-  const cofferMat2 = new THREE.MeshStandardMaterial({ color: "#f2f2f0", roughness: 0.95 });
-  for (let zc = -currentRoomLen / 2 + 4; zc < currentRoomLen / 2; zc += 5.2) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.025, 0.07), cofferMat2);
-    bar.position.set(0, ROOM_H - 0.012, zc);
-    galleryGroup.add(bar);
+  // ── Ceiling coffers with depth ──
+  var cofferBarMat = new THREE.MeshStandardMaterial({ color: "#f0ece4", roughness: 0.88 });
+  for (var zc = -HL + 5; zc < HL; zc += 4.8) {
+    // Main beam
+    var beam = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.6, 0.08, 0.12), cofferBarMat);
+    beam.position.set(0, ROOM_H - 0.04, zc);
+    galleryGroup.add(beam);
+    // Center spine
+    if (zc < HL - 3) {
+      var spine = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 4.6), cofferBarMat);
+      spine.position.set(0, ROOM_H - 0.03, zc + 2.4);
+      galleryGroup.add(spine);
+    }
   }
 
-  // RectAreaLight track lighting (scales with gallery length)
-  const trackColor = 0xfff8f0;
-  const trackI = 6;
-  const trackCount = Math.max(4, Math.ceil(currentRoomLen / 5));
-  const trackStart = -(currentRoomLen / 2 - 3);
-  const trackStep = (currentRoomLen - 6) / Math.max(1, trackCount - 1);
-  for (let i = 0; i < trackCount; i++) {
-    const z = trackStart + i * trackStep;
-    const l = new THREE.RectAreaLight(trackColor, trackI, 1.4, 0.6);
-    l.position.set(-WALL_X + 1.8, ROOM_H - 0.35, z);
-    l.lookAt(-WALL_X + 0.1, 1.9, z);
-    galleryGroup.add(l);
-    const r = new THREE.RectAreaLight(trackColor, trackI, 1.4, 0.6);
-    r.position.set(WALL_X - 1.8, ROOM_H - 0.35, z);
-    r.lookAt(WALL_X - 0.1, 1.9, z);
-    galleryGroup.add(r);
+  // ── Artwork spotlights (RectAreaLight per side, warm museum lighting) ──
+  var trackColor = 0xfff0dd;
+  var trackI = 8;
+  var spotStep = SLOT_SPACING;
+  for (var si = 0; si < slotsPerSide; si++) {
+    var z = slotZStart + si * spotStep;
+    // Left wall spot
+    var sl = new THREE.RectAreaLight(trackColor, trackI, 1.6, 0.5);
+    sl.position.set(-WALL_X + 2.0, ROOM_H - 0.3, z);
+    sl.lookAt(-WALL_X + 0.1, 1.8, z);
+    galleryGroup.add(sl);
+    // Right wall spot
+    var sr = new THREE.RectAreaLight(trackColor, trackI, 1.6, 0.5);
+    sr.position.set(WALL_X - 2.0, ROOM_H - 0.3, z);
+    sr.lookAt(WALL_X - 0.1, 1.8, z);
+    galleryGroup.add(sr);
   }
 
-  // Podium with red button near entrance
+  // ── Ambient ceiling wash lights ──
+  var washCount = Math.max(2, Math.ceil(currentRoomLen / 12));
+  for (var wi = 0; wi < washCount; wi++) {
+    var wz = -HL + 6 + wi * (currentRoomLen - 12) / Math.max(1, washCount - 1);
+    var wash = new THREE.PointLight(0xfff4e8, 0.6, 16);
+    wash.position.set(0, ROOM_H - 0.1, wz);
+    galleryGroup.add(wash);
+  }
+
+  // ── Gallery benches (every ~6 artworks, centered) ──
+  for (var bi = 3; bi < slotsPerSide; bi += 6) {
+    var bz = slotZStart + bi * SLOT_SPACING + SLOT_SPACING / 2;
+    var bench = buildBench();
+    bench.position.set(0, 0, bz);
+    galleryGroup.add(bench);
+  }
+
+  // ── Podium with red button near entrance ──
   var podium = buildPodium();
-  podium.position.set(0, 0, currentRoomLen / 2 - 6);
+  podium.position.set(0, 0, HL - 6);
   galleryGroup.add(podium);
 
-  camera.position.set(0, 1.7, currentRoomLen / 2 - 2);
+  camera.position.set(0, 1.7, HL - 2);
+}
+
+function buildBench() {
+  var g = new THREE.Group();
+  // Seat (dark wood)
+  var seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.5), benchSeatMat);
+  seat.position.y = 0.46;
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  g.add(seat);
+  // Legs (4 legs)
+  var legGeo = new THREE.BoxGeometry(0.06, 0.43, 0.06);
+  [[-0.82, -0.18], [-0.82, 0.18], [0.82, -0.18], [0.82, 0.18]].forEach(function(p) {
+    var leg = new THREE.Mesh(legGeo, benchMat);
+    leg.position.set(p[0], 0.215, p[1]);
+    leg.castShadow = true;
+    g.add(leg);
+  });
+  // Cross stretcher
+  var stretch = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat);
+  stretch.position.set(0, 0.14, 0);
+  g.add(stretch);
+  return g;
 }
 
 buildGallery(48);
@@ -272,56 +370,43 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
   backing.visible = framesVisible;
   group.add(backing);
 
-  // Parse pixels into dark / light buckets
-  const darkC = [], darkCol = [], lightC = [], lightCol = [];
+  // Parse pixels — skip background, only render character pixels
+  // Normies are ~2 color: light bg (#e3e5e4, lum~227) + dark character (#48494b, lum~73)
+  // Some customized normies may have more colors
+  const BG_LUM = 180; // anything brighter than this is background → skip
+  const voxels = [];
   for (let py = 0; py < GRID; py++) {
     for (let px = 0; px < GRID; px++) {
       const i = (py * GRID + px) * 4;
       const rv = rgbaData[i], gv = rgbaData[i + 1], bv = rgbaData[i + 2], av = rgbaData[i + 3];
       if (av < 10) continue;
       const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
+      if (lum > BG_LUM) continue; // background pixel — the wall IS the background
       const wx = (px - GRID / 2 + 0.5) * CELL;
       const wy = (GRID / 2 - py - 0.5) * CELL;
-      if (lum < 45) {
-        darkC.push([wx, wy]);
-        darkCol.push([rv / 255, gv / 255, bv / 255]);
-      } else {
-        lightC.push([wx, wy]);
-        lightCol.push([rv / 255, gv / 255, bv / 255]);
-      }
+      // Darker pixels protrude more: map lum 0→180 to depth 6→1.5
+      const depthMul = 1.5 + (1 - lum / BG_LUM) * 4.5;
+      voxels.push({ x: wx, y: wy, r: rv / 255, g: gv / 255, b: bv / 255, depth: depthMul });
     }
   }
 
-  // Light voxels (slight raise)
-  if (lightC.length) {
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.62, vertexColors: true });
-    const inst = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 1.3), mat, lightC.length
-    );
+  // Render all character voxels as a single InstancedMesh
+  if (voxels.length) {
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.05, vertexColors: true });
+    const geo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+    const inst = new THREE.InstancedMesh(geo, mat, voxels.length);
     const m4 = new THREE.Matrix4(), col = new THREE.Color();
-    for (let i = 0; i < lightC.length; i++) {
-      m4.setPosition(lightC[i][0], lightC[i][1], VOXEL_SIZE * 0.65);
+    const scaleV = new THREE.Vector3();
+    const posV = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    for (let i = 0; i < voxels.length; i++) {
+      const v = voxels[i];
+      const depth = v.depth;
+      posV.set(v.x, v.y, VOXEL_SIZE * depth / 2);
+      scaleV.set(1, 1, depth);
+      m4.compose(posV, quat, scaleV);
       inst.setMatrixAt(i, m4);
-      col.setRGB(lightCol[i][0], lightCol[i][1], lightCol[i][2]);
-      inst.setColorAt(i, col);
-    }
-    inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    inst.castShadow = inst.receiveShadow = true;
-    group.add(inst);
-  }
-
-  // Dark voxels (deep extrusion)
-  if (darkC.length) {
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.08, vertexColors: true });
-    const inst = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 4.5), mat, darkC.length
-    );
-    const m4 = new THREE.Matrix4(), col = new THREE.Color();
-    for (let i = 0; i < darkC.length; i++) {
-      m4.setPosition(darkC[i][0], darkC[i][1], VOXEL_SIZE * 2.25);
-      inst.setMatrixAt(i, m4);
-      col.setRGB(darkCol[i][0], darkCol[i][1], darkCol[i][2]);
+      col.setRGB(v.r, v.g, v.b);
       inst.setColorAt(i, col);
     }
     inst.instanceMatrix.needsUpdate = true;
@@ -336,12 +421,12 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
     new THREE.PlaneGeometry(ART_W + 0.2, 0.28),
     new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
   );
-  label.position.set(0, -(ART_H / 2 + 0.34), 0.01);
+  label.position.set(0, -(ART_H / 2 + 0.36), 0.01);
   group.add(label);
 
-  // Per-artwork spotlight
-  const spot = new THREE.PointLight(0xfff5e0, 0.9, 2.6, 2.2);
-  spot.position.set(0, 0.4, 0.75);
+  // Per-artwork warm spotlight
+  const spot = new THREE.PointLight(0xfff0dd, 1.2, 3.2, 2.0);
+  spot.position.set(0, 0.5, 0.9);
   group.add(spot);
 
   // Reveal state
@@ -489,9 +574,12 @@ function updateInteractionHint(show) {
 function pressButton() {
   if (!podiumBtnMesh || btnAnimating) return;
   framesVisible = !framesVisible;
-  artGroup.traverse(function(child) {
-    if (child.userData && child.userData.isFrame) child.visible = framesVisible;
-  });
+  // Toggle ALL frame elements across all artworks
+  for (var ai = 0; ai < artGroup.children.length; ai++) {
+    artGroup.children[ai].traverse(function(child) {
+      if (child.userData && child.userData.isFrame) child.visible = framesVisible;
+    });
+  }
   btnAnimating = true;
   var origY = podiumBtnMesh.position.y;
   podiumBtnMesh.position.y = origY - 0.02;
