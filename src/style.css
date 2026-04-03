@@ -243,50 +243,12 @@ body::before {
 .status-line.error { color: #c0392b; }
 [data-theme="dark"] .status-line.error { color: #e74c3c; }
 
-/* Red button preview on homepage */
-.hero-preview {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 18px;
-  opacity: 0.55;
-  transition: opacity 0.3s;
-}
-.hero-preview:hover { opacity: 0.85; }
-.preview-podium {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.preview-col {
-  width: 18px;
-  height: 24px;
-  background: linear-gradient(to bottom, var(--border), var(--faint));
-  border-radius: 2px 2px 3px 3px;
-}
-.preview-btn-ring {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: -2px;
-  position: relative;
-  z-index: 1;
-}
-.preview-btn {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 40% 35%, #e84040, #aa1818);
-  box-shadow: 0 0 6px rgba(220, 40, 40, 0.4);
-}
-.preview-label {
+/* Hint line */
+.hero-hint {
   font-size: 10px;
   color: var(--faint);
   letter-spacing: 0.04em;
+  margin-top: 6px;
 }
 
 /* ── Footer ──────────────────────────────────────────────────────────────── */
