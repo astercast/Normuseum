@@ -152,8 +152,15 @@ body::before {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  max-width: 520px;
+  max-width: 540px;
   width: 100%;
+}
+
+.hero-rule {
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 24px;
 }
 
 .hero-title {
@@ -163,16 +170,16 @@ body::before {
   letter-spacing: -0.04em;
   line-height: 0.92;
   color: var(--text);
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .hero-sub {
   font-family: var(--font-body);
-  font-size: 14px;
+  font-size: 13px;
   color: var(--muted);
-  line-height: 1.6;
+  line-height: 1.7;
   margin-bottom: 36px;
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .hero-badge {
@@ -186,6 +193,45 @@ body::before {
   border: 1px solid var(--border);
   padding: 4px 14px;
   margin-bottom: 20px;
+}
+
+/* ── Feature highlights ──────────────────────────────────────────────────── */
+.hero-features {
+  display: flex;
+  gap: 1px;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 32px;
+  border: 1px solid var(--border);
+  background: var(--border);
+}
+.feature-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px;
+  background: var(--bg);
+}
+.feature-icon {
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.feature-label {
+  font-family: var(--font);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+.feature-desc {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--faint);
+  line-height: 1.4;
 }
 
 /* ── Input group ─────────────────────────────────────────────────────────── */
@@ -585,85 +631,74 @@ body.touch-device #helpPanel     { display: none; }
 body.touch-device #helpBtn       { display: none; }
 body.touch-device #crosshair     { display: none; }
 
-/* ── About modal ─────────────────────────────────────────────────────────── */
-.modal-backdrop {
-  position: fixed; inset: 0;
-  z-index: 200;
-  background: var(--overlay-bg);
-  backdrop-filter: blur(16px);
+/* ── About page (full page, replaces landing) ────────────────────────────── */
+.about-page {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
-  transition: opacity 0.25s ease, visibility 0.25s;
+  padding: 0 24px;
+  animation: fade-in 0.4s ease forwards;
+  overflow-y: auto;
 }
-.modal-hidden {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-}
-.modal-card {
-  position: relative;
-  background: var(--white);
-  border: 1px solid var(--border);
-  padding: 36px 40px 32px;
+.about-hidden { display: none; }
+.about-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   max-width: 480px;
   width: 100%;
-  box-shadow: 0 8px 48px rgba(0,0,0,0.08);
-  animation: fade-in 0.3s ease forwards;
+  padding: 40px 0;
 }
-.modal-close {
-  position: absolute;
-  top: 14px; right: 16px;
-  background: none;
-  border: none;
-  font-size: 14px;
-  color: var(--muted);
-  cursor: pointer;
-  padding: 4px 6px;
-  line-height: 1;
-  font-family: var(--font);
-  transition: color 0.15s;
+.about-rule {
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+  margin-bottom: 24px;
 }
-.modal-close:hover { color: var(--text); }
-.modal-eyebrow {
+.about-eyebrow {
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--muted);
   margin-bottom: 8px;
 }
-.modal-title {
-  font-size: 26px;
+.about-title {
+  font-size: 32px;
   font-weight: 500;
   letter-spacing: -0.02em;
   color: var(--text);
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
-.modal-body {
+.about-body {
   font-family: var(--font-body);
   font-size: 13px;
   color: var(--muted);
   line-height: 1.75;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+  text-align: left;
+  width: 100%;
 }
-.modal-body a {
+.about-body a {
   color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.modal-divider {
-  width: 100%; height: 1px;
+.about-divider {
+  width: 100%;
+  height: 1px;
   background: var(--border);
   margin-bottom: 20px;
 }
-.modal-links {
+.about-links {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%;
   margin-bottom: 24px;
 }
-.modal-pill {
+.about-pill {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -675,16 +710,17 @@ body.touch-device #crosshair     { display: none; }
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.04em;
+  text-align: left;
   transition: border-color 0.15s;
 }
-.modal-pill:hover { border-color: var(--text); }
-.modal-pill-sub {
+.about-pill:hover { border-color: var(--text); }
+.about-pill-sub {
   font-family: var(--font-body);
   font-size: 10px;
   color: var(--muted);
   font-weight: 400;
 }
-.modal-footer-text {
+.about-footer-text {
   font-size: 10px;
   color: var(--faint);
   letter-spacing: 0.04em;
@@ -701,12 +737,17 @@ body.touch-device #crosshair     { display: none; }
   #landing { padding: 0 16px; }
   .hero-title { font-size: 40px; }
   .hero-center { max-width: 100%; }
+  .hero-sub { font-size: 12px; max-width: 100%; }
   .input-group { flex-direction: column; border: none; }
   #walletInput { border: 1px solid var(--border); }
   #loadBtn { border: 1px solid var(--border); border-left: 1px solid var(--border); }
+  .hero-features { flex-direction: column; }
+  .feature-item { padding: 14px 12px; }
   #helpPanel { display: none; }
   #helpBtn   { display: none; }
-  .modal-card { padding: 24px 20px; }
+  .about-page { padding: 0 16px; }
+  .about-content { padding: 24px 0; }
+  .about-title { font-size: 26px; }
   #landing-footer { gap: 6px 12px; padding: 12px 16px; }
   .nav-right { gap: 12px; }
 }

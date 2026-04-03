@@ -64,9 +64,9 @@ const statusEl      = $("status");
 const progressWrap  = $("progress-wrap");
 const progressBar   = $("progress-bar");
 const progressLabel = $("progress-label");
-const aboutModal    = $("about-modal");
+const aboutModal    = $("about-page");
 const aboutBtn      = $("aboutBtn");
-const aboutCloseBtn = $("aboutCloseBtn");
+const homeBtn       = $("homeBtn");
 const themeToggle   = $("themeToggle");
 const fullscreenBtn = $("fullscreenBtn");
 
@@ -283,19 +283,19 @@ function buildRoom(ri) {
   // Chair rail
   var railGeo = new THREE.BoxGeometry(0.06, 0.05, room.roomLen + 0.2);
   [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
-    g.add(new THREE.Mesh(railGeo, mouldMat)).position.set(cx + x, wainH, zMid);
+    var rail = new THREE.Mesh(railGeo, mouldMat); rail.position.set(cx + x, wainH, zMid); g.add(rail);
   });
 
   // Crown moulding
   var crownGeo = new THREE.BoxGeometry(0.14, 0.1, room.roomLen + 0.4);
   [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
-    g.add(new THREE.Mesh(crownGeo, mouldMat)).position.set(cx + x, ROOM_H - 0.05, zMid);
+    var crown = new THREE.Mesh(crownGeo, mouldMat); crown.position.set(cx + x, ROOM_H - 0.05, zMid); g.add(crown);
   });
 
   // Baseboard
   var skirtGeo = new THREE.BoxGeometry(0.06, 0.18, room.roomLen + 0.1);
   [-WALL_X + 0.03, WALL_X - 0.03].forEach(function(x) {
-    g.add(new THREE.Mesh(skirtGeo, baseMat)).position.set(cx + x, 0.09, zMid);
+    var skirt = new THREE.Mesh(skirtGeo, baseMat); skirt.position.set(cx + x, 0.09, zMid); g.add(skirt);
   });
 
   // Skylights
@@ -310,7 +310,7 @@ function buildRoom(ri) {
       var tr = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.05, t[3]), trimMat);
       tr.position.set(cx + t[0], ROOM_H - 0.02, sz + t[1]); g.add(tr);
     });
-    g.add(new THREE.PointLight(0xc4dff0, 0.4, 7)).position.set(cx, ROOM_H - 0.1, sz);
+    var skyLight = new THREE.PointLight(0xc4dff0, 0.4, 7); skyLight.position.set(cx, ROOM_H - 0.1, sz); g.add(skyLight);
   }
 
   // Per-artwork spotlights
@@ -327,7 +327,7 @@ function buildRoom(ri) {
   var washCount = Math.max(1, Math.ceil(room.roomLen / 14));
   for (var wi = 0; wi < washCount; wi++) {
     var wz = room.zStart - ROOM_PAD - (wi + 0.5) * ((room.roomLen - ROOM_PAD) / washCount);
-    g.add(new THREE.PointLight(0xfff4e8, 0.4, 12)).position.set(cx, ROOM_H - 0.1, wz);
+    var washLight = new THREE.PointLight(0xfff4e8, 0.4, 12); washLight.position.set(cx, ROOM_H - 0.1, wz); g.add(washLight);
   }
 
   // Bench
@@ -421,7 +421,7 @@ function addCorridorSegment(parent, cx, zMid, w, len) {
   var wallGeo = new THREE.PlaneGeometry(len, ROOM_H);
   var lw = new THREE.Mesh(wallGeo, wallMat); lw.rotation.y = Math.PI / 2; lw.position.set(cx - w / 2, ROOM_H / 2, zMid); parent.add(lw);
   var rw = new THREE.Mesh(wallGeo, wallMat); rw.rotation.y = -Math.PI / 2; rw.position.set(cx + w / 2, ROOM_H / 2, zMid); parent.add(rw);
-  parent.add(new THREE.PointLight(0xfff4e8, 0.3, 8)).position.set(cx, ROOM_H - 0.2, zMid);
+  var corrLight = new THREE.PointLight(0xfff4e8, 0.3, 8); corrLight.position.set(cx, ROOM_H - 0.2, zMid); parent.add(corrLight);
 }
 
 function addCorridorCross(parent, cx, zMid, w, h) {
@@ -432,7 +432,7 @@ function addCorridorCross(parent, cx, zMid, w, h) {
   var wallGeo = new THREE.PlaneGeometry(w, ROOM_H);
   var fw = new THREE.Mesh(wallGeo, wallMat); fw.position.set(cx, ROOM_H / 2, zMid - h / 2); parent.add(fw);
   var bw = new THREE.Mesh(wallGeo, wallMat); bw.rotation.y = Math.PI; bw.position.set(cx, ROOM_H / 2, zMid + h / 2); parent.add(bw);
-  parent.add(new THREE.PointLight(0xfff4e8, 0.3, 8)).position.set(cx, ROOM_H - 0.2, zMid);
+  var crossLight = new THREE.PointLight(0xfff4e8, 0.3, 8); crossLight.position.set(cx, ROOM_H - 0.2, zMid); parent.add(crossLight);
 }
 
 /* ── Bench ────────────────────────────────────────────────────────────────── */
@@ -444,7 +444,7 @@ function buildBench() {
     var leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.43, 0.06), benchMat);
     leg.position.set(p[0], 0.215, p[1]); leg.castShadow = true; g.add(leg);
   });
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat)).position.set(0, 0.14, 0);
+  var stretcher = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat); stretcher.position.set(0, 0.14, 0); g.add(stretcher);
   return g;
 }
 
@@ -556,7 +556,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta) {
   );
   label.position.set(0, -(ART_H / 2 + 0.36), 0.01); group.add(label);
 
-  group.add(new THREE.PointLight(0xfff0dd, 1.0, 3.0, 2.0)).position.set(0, 0.5, 0.9);
+  var artLight = new THREE.PointLight(0xfff0dd, 1.0, 3.0, 2.0); artLight.position.set(0, 0.5, 0.9); group.add(artLight);
 
   group.userData.revealT = 0;
   group.userData.revealing = true;
@@ -670,7 +670,7 @@ function buildPodium() {
       emissive: new THREE.Color("#330808"), emissiveIntensity: 0.4 }));
   btn.position.y = 0.99; btn.userData.isButton = true; btn.castShadow = true;
   podiumBtnMesh = btn; group.add(btn);
-  group.add(new THREE.PointLight(0xff3333, 0.4, 1.8)).position.y = 1.15;
+  var podLight = new THREE.PointLight(0xff3333, 0.4, 1.8); podLight.position.y = 1.15; group.add(podLight);
   var signMat = new THREE.MeshBasicMaterial({ map: makePodiumLabel(), transparent: true });
   [{ p: [0, 0.5, 0.31], ry: 0 }, { p: [0, 0.5, -0.31], ry: Math.PI },
    { p: [-0.31, 0.5, 0], ry: Math.PI / 2 }, { p: [0.31, 0.5, 0], ry: -Math.PI / 2 }]
@@ -917,6 +917,15 @@ function enterMuseum() {
   inMuseum = true;
   overlayEl.classList.add("hidden");
   hudEl.classList.remove("hud-hidden");
+  /* auto-start music */
+  initMusic();
+  if (!musicPlaying) {
+    bgMusic.play().catch(function() {});
+    musicPlaying = true;
+    if (musicBtn) musicBtn.classList.add("music-active");
+    var stateEl = $("musicState");
+    if (stateEl) stateEl.textContent = "on";
+  }
 }
 
 function exitMuseum() {
@@ -924,6 +933,13 @@ function exitMuseum() {
   if (document.fullscreenElement || document.webkitFullscreenElement) {
     (document.exitFullscreen || document.webkitExitFullscreen).call(document);
   }
+  /* stop music */
+  if (bgMusic) { bgMusic.pause(); bgMusic.currentTime = 0; }
+  musicPlaying = false;
+  if (musicBtn) musicBtn.classList.remove("music-active");
+  var stateEl = $("musicState");
+  if (stateEl) stateEl.textContent = "off";
+
   inMuseum = false; currentRoomIdx = -1;
   isSitting = false; isJumping = false; jumpVelocity = 0; GROUND_Y = 1.7;
   overlayEl.classList.remove("hidden");
@@ -932,6 +948,7 @@ function exitMuseum() {
   camera.position.set(0, 1.7, 2);
   camera.rotation.set(0, 0, 0);
   mobileYaw = 0; mobilePitch = 0;
+  showLandingPage();
 }
 
 /* ── Main load flow ───────────────────────────────────────────────────────── */
@@ -975,9 +992,20 @@ async function loadMuseumForWallets(rawInput) {
 }
 
 /* ── Event listeners ──────────────────────────────────────────────────────── */
-aboutBtn.addEventListener("click", function() { aboutModal.classList.remove("modal-hidden"); });
-aboutCloseBtn.addEventListener("click", function() { aboutModal.classList.add("modal-hidden"); });
-aboutModal.addEventListener("click", function(e) { if (e.target === aboutModal) aboutModal.classList.add("modal-hidden"); });
+var landingEl = $("landing");
+var footerEl  = $("landing-footer");
+function showAboutPage() {
+  landingEl.style.display = "none";
+  footerEl.style.display = "none";
+  aboutModal.classList.remove("about-hidden");
+}
+function showLandingPage() {
+  aboutModal.classList.add("about-hidden");
+  landingEl.style.display = "";
+  footerEl.style.display = "";
+}
+aboutBtn.addEventListener("click", function(e) { e.preventDefault(); showAboutPage(); });
+homeBtn.addEventListener("click", function(e) { e.preventDefault(); showLandingPage(); });
 exitBtn.addEventListener("click", exitMuseum);
 loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
 walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
@@ -1031,7 +1059,7 @@ function playFootstep() {
   osc.frequency.setValueAtTime(60 + Math.random() * 30, now);
   osc.frequency.exponentialRampToValueAtTime(30, now + 0.08);
   filter.type = "lowpass"; filter.frequency.setValueAtTime(200, now); filter.Q.setValueAtTime(0.7, now);
-  gain.gain.setValueAtTime(0.018 * sfxVolume * 2, now);
+  gain.gain.setValueAtTime(0.06 * sfxVolume, now);
   gain.gain.exponentialRampToValueAtTime(0.001, now + 0.10);
   osc.connect(filter); filter.connect(gain); gain.connect(audioCtx.destination);
   osc.start(now); osc.stop(now + 0.12);
@@ -1071,7 +1099,7 @@ if (sfxSlider) {
   sfxSlider.value = sfxVolume * 100;
   sfxSlider.addEventListener("input", function() {
     sfxVolume = this.value / 100;
-    if (slurpAudio) slurpAudio.volume = sfxVolume * 0.7;
+    if (slurpAudio) slurpAudio.volume = sfxVolume * 0.25;
   });
 }
 document.addEventListener("click", function(e) {
@@ -1081,7 +1109,7 @@ document.addEventListener("click", function(e) {
 });
 
 /* ── Slurp sound near art ─────────────────────────────────────────────────── */
-function initSlurp() { if (slurpAudio) return; slurpAudio = new Audio("./slurp.mp3"); slurpAudio.volume = sfxVolume * 0.7; }
+function initSlurp() { if (slurpAudio) return; slurpAudio = new Audio("./slurp.mp3"); slurpAudio.volume = sfxVolume * 0.25; }
 function checkSlurpProximity(dt) {
   if (slurpCooldown > 0) { slurpCooldown -= dt; return; }
   var px = camera.position.x, pz = camera.position.z;

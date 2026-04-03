@@ -30,9 +30,10 @@
 
       <main id="landing">
         <div class="hero-center">
-          <div class="hero-badge">3D voxel gallery</div>
+          <div class="hero-rule"></div>
+          <div class="hero-badge">3D voxel gallery · ethereum</div>
           <h1 class="hero-title">normies<br/>museum</h1>
-          <p class="hero-sub">walk through your collection in a first-person gallery.<br/>each normie sculpted as a tactile voxel relief on the walls.</p>
+          <p class="hero-sub">step inside a first-person gallery where every normie is sculpted as a tactile voxel relief — dark pixels physically extruded from the canvas.</p>
 
           <div class="input-group" role="search">
             <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
@@ -40,8 +41,31 @@
             <button id="loadBtn" type="button">enter museum →</button>
           </div>
           <p id="status" class="status-line" aria-live="polite"></p>
+          <p class="hero-hint">multiple wallets · comma-separated</p>
 
-          <p class="hero-hint">multiple wallets · comma-separated · toggle frames in gallery</p>
+          <div class="hero-features">
+            <div class="feature-item">
+              <span class="feature-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </span>
+              <span class="feature-label">voxel sculpture</span>
+              <span class="feature-desc">each piece extruded into 3D relief</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              </span>
+              <span class="feature-label">multi-room gallery</span>
+              <span class="feature-desc">rooms scale with your collection</span>
+            </div>
+            <div class="feature-item">
+              <span class="feature-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </span>
+              <span class="feature-label">ambient audio</span>
+              <span class="feature-desc">debussy, footsteps, spatial sound</span>
+            </div>
+          </div>
         </div>
       </main>
 
@@ -51,6 +75,44 @@
         </div>
         <span class="footer-credit">built by <a href="https://x.com/aster0x" target="_blank" rel="noopener">@aster0x</a></span>
       </footer>
+
+      <!-- ABOUT PAGE (replaces landing when visible) -->
+      <main id="about-page" class="about-page about-hidden">
+        <div class="about-content">
+          <div class="about-rule"></div>
+          <p class="about-eyebrow">about</p>
+          <h2 class="about-title">normuseum</h2>
+          <p class="about-body">
+            normuseum is a first-person 3D voxel gallery for the
+            <a href="https://normies.art" target="_blank" rel="noopener">Normies</a>
+            NFT collection on ethereum mainnet. paste any wallet address or ENS name
+            — multiple wallets supported, comma-separated — and walk through your
+            collection on the walls of a minimal white-cube gallery.
+          </p>
+          <p class="about-body">
+            each normie is rendered as a high-quality voxel relief, with dark pixels
+            physically extruded from the canvas to create a tactile, sculptural effect.
+            rooms are generated dynamically to host collections of any size, connected
+            by corridors with marble finishes, moulding and skylight detail.
+          </p>
+          <div class="about-divider"></div>
+          <div class="about-links">
+            <a class="about-pill" href="https://normiesarchive.xyz" target="_blank" rel="noopener">
+              normiesarchive.xyz ↗
+              <span class="about-pill-sub">pixel history explorer — also by aster0x</span>
+            </a>
+            <a class="about-pill" href="https://x.com/aster0x" target="_blank" rel="noopener">
+              @aster0x on X ↗
+              <span class="about-pill-sub">creator &amp; developer</span>
+            </a>
+            <a class="about-pill" href="https://normies.art" target="_blank" rel="noopener">
+              normies.art ↗
+              <span class="about-pill-sub">official collection</span>
+            </a>
+          </div>
+          <p class="about-footer-text">a 3D gallery experience · ethereum mainnet</p>
+        </div>
+      </main>
     </div>
 
     <!-- IN-MUSEUM HUD -->
@@ -100,40 +162,6 @@
       <div id="progress-wrap">
         <div id="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div>
         <div id="progress-label"></div>
-      </div>
-    </div>
-
-    <!-- ABOUT MODAL -->
-    <div id="about-modal" class="modal-backdrop modal-hidden">
-      <div class="modal-card">
-        <button class="modal-close" id="aboutCloseBtn" type="button">✕</button>
-        <p class="modal-eyebrow">about</p>
-        <h2 class="modal-title">normuseum</h2>
-        <p class="modal-body">
-          normuseum is a first-person 3D voxel gallery for the
-          <a href="https://normies.art" target="_blank" rel="noopener">Normies</a>
-          NFT collection on ethereum mainnet. paste any wallet address or ENS name
-          — multiple wallets supported, comma-separated — and walk through your
-          collection on the walls of a minimal white-cube gallery. each normie is
-          rendered as a high-quality voxel relief, with dark pixels physically
-          extruded from the canvas to create a tactile, sculptural effect.
-        </p>
-        <div class="modal-divider"></div>
-        <div class="modal-links">
-          <a class="modal-pill" href="https://normiesarchive.xyz" target="_blank" rel="noopener">
-            normiesarchive.xyz ↗
-            <span class="modal-pill-sub">pixel history explorer — also by aster0x</span>
-          </a>
-          <a class="modal-pill" href="https://x.com/aster0x" target="_blank" rel="noopener">
-            @aster0x on X ↗
-            <span class="modal-pill-sub">creator &amp; developer</span>
-          </a>
-          <a class="modal-pill" href="https://normies.art" target="_blank" rel="noopener">
-            normies.art ↗
-            <span class="modal-pill-sub">official collection</span>
-          </a>
-        </div>
-        <p class="modal-footer-text">a 3D gallery experience · ethereum mainnet</p>
       </div>
     </div>
 
