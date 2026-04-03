@@ -1,379 +1,334 @@
 import "./style.css";
 import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
-import { RectAreaLightHelper } from "three/examples/jsm/helpers/RectAreaLightHelper.js";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 
 RectAreaLightUniformsLib.init();
 
+/* ── Constants ────────────────────────────────────────────────────────────── */
 const NORMIES_CONTRACT = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
 const NORMIES_API      = "https://api.normies.art";
-const MAX_ARTWORKS     = 48;
+const MAX_ARTWORKS     = 100;
+const VOXEL_SIZE       = 0.048;
+const GRID             = 40;
+const CELL             = 1.98 / GRID;
+const ART_W = 2.12, ART_H = 2.12;
+const ROOM_W = 14, ROOM_H = 4.8;
+const SLOT_SPACING = 3.2;
 
-// Gallery dimensions
-const ROOM_W  = 14;   // full width
-const ROOM_H  = 4.6;  // ceiling height
-const ROOM_LEN= 52;   // length (Z)
-const WALL_X  = ROOM_W / 2;  // 7
-const SLOT_SPACING = 2.9;    // spacing between artworks along Z
+/* ── DOM refs ─────────────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const canvasEl      = $("scene");
+const overlayEl     = $("overlay");
+const hudEl         = $("hud");
+const hudMetaEl     = $("hud-meta");
+const walletInput   = $("walletInput");
+const loadBtn       = $("loadBtn");
+const exitBtn       = $("exitBtn");
+const statusEl      = $("status");
+const progressWrap  = $("progress-wrap");
+const progressBar   = $("progress-bar");
+const progressLabel = $("progress-label");
+const aboutModal    = $("about-modal");
+const aboutBtn      = $("aboutBtn");
+const aboutCloseBtn = $("aboutCloseBtn");
 
-// ─── DOM refs ──────────────────────────────────────────────────────────────
-const canvasEl      = document.getElementById("scene");
-const overlayEl     = document.getElementById("overlay");
-const hudEl         = document.getElementById("hud");
-const hudMetaEl     = document.getElementById("hud-meta");
-const walletInput   = document.getElementById("walletInput");
-const loadBtn       = document.getElementById("loadBtn");
-const exitBtn       = document.getElementById("exitBtn");
-const statusEl      = document.getElementById("status");
-const progressWrap  = document.getElementById("progress-wrap");
-const progressBar   = document.getElementById("progress-bar");
-const progressLabel = document.getElementById("progress-label");
+/* ── Platform ─────────────────────────────────────────────────────────────── */
+const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
+if (isTouch) document.body.classList.add("touch-device");
 
-// ─── Renderer ──────────────────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping      = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+/* ── Renderer ─────────────────────────────────────────────────────────────── */
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvasEl,
+  antialias: true,
+  powerPreference: "high-performance",
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace        = THREE.SRGBColorSpace;
+renderer.toneMapping             = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure     = 1.05;
+renderer.shadowMap.enabled       = true;
+renderer.shadowMap.type          = THREE.PCFSoftShadowMap;
 
-// ─── Scene ─────────────────────────────────────────────────────────────────
+/* ── Scene ────────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#e3e5e4");
-scene.fog        = new THREE.FogExp2("#e8eae9", 0.028);
+scene.fog = new THREE.FogExp2("#e8eae9", 0.022);
 
-// ─── Camera ────────────────────────────────────────────────────────────────
-const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 120);
-camera.position.set(0, 1.7, ROOM_LEN / 2 - 2);
+/* ── Camera ───────────────────────────────────────────────────────────────── */
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 150);
+camera.position.set(0, 1.7, 2);
 
-// ─── Touch / mobile detection ──────────────────────────────────────────────────────────────
-const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-if (isTouch) document.body.classList.add('touch-device');
-
-// ─── Controls (desktop only) ─────────────────────────────────────────────────────────
+/* ── Controls ─────────────────────────────────────────────────────────────── */
 let controls = null;
 if (!isTouch) {
   controls = new PointerLockControls(camera, renderer.domElement);
   scene.add(controls.getObject());
 } else {
   scene.add(camera);
-  camera.rotation.order = 'YXZ';
+  camera.rotation.order = "YXZ";
 }
 
-// ─── Lights ────────────────────────────────────────────────────────────────
-// Soft ambient fill
-const amb = new THREE.AmbientLight(0xfaf9f7, 0.55);
-scene.add(amb);
-
-// Warm directional key
-const sun = new THREE.DirectionalLight(0xfff5e8, 0.4);
-sun.position.set(3, 12, 6);
+/* ── Lights ───────────────────────────────────────────────────────────────── */
+scene.add(new THREE.AmbientLight(0xfaf9f7, 0.5));
+const sun = new THREE.DirectionalLight(0xfff5e8, 0.35);
+sun.position.set(3, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far  = 80;
 scene.add(sun);
 
-// Gallery track lighting — RectAreaLights recessed in ceiling rows
-const trackLightColor = 0xfff8f0;
-const trackIntensity  = 6;
-const trackZStart = -(ROOM_LEN / 2 - 4);
-const trackCount  = 10;
-const trackStep   = (ROOM_LEN - 8) / (trackCount - 1);
-for (let i = 0; i < trackCount; i++) {
-  const z = trackZStart + i * trackStep;
-  // Left wall wash
-  const l = new THREE.RectAreaLight(trackLightColor, trackIntensity, 1.4, 0.6);
-  l.position.set(-WALL_X + 1.8, ROOM_H - 0.35, z);
-  l.lookAt(-WALL_X + 0.1, 1.9, z);
-  scene.add(l);
-  // Right wall wash
-  const r = new THREE.RectAreaLight(trackLightColor, trackIntensity, 1.4, 0.6);
-  r.position.set(WALL_X - 1.8, ROOM_H - 0.35, z);
-  r.lookAt(WALL_X - 0.1, 1.9, z);
-  scene.add(r);
-}
+/* ── Shared materials ─────────────────────────────────────────────────────── */
+const floorMat = new THREE.MeshStandardMaterial({ color: "#d0d2d1", roughness: 0.88 });
+const wallMat  = new THREE.MeshStandardMaterial({ color: "#f8f8f6", roughness: 0.92 });
+const ceilMat  = new THREE.MeshStandardMaterial({ color: "#fafafa", roughness: 0.96 });
+const mouldMat = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.82 });
+const baseMat  = new THREE.MeshStandardMaterial({ color: "#e8e9e8", roughness: 0.85 });
+const frameMat = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.7, metalness: 0.06 });
+const backMat  = new THREE.MeshStandardMaterial({ color: "#fafaf8", roughness: 0.97 });
+const placeMat = new THREE.MeshStandardMaterial({ color: "#e6e8e7", roughness: 0.97 });
 
-// ─── Gallery Room Geometry ─────────────────────────────────────────────────
-function buildRoom() {
-  const room = new THREE.Group();
-
-  // Materials
-  const floorMat = new THREE.MeshStandardMaterial({
-    color: "#d0d2d1", roughness: 0.88, metalness: 0.0
-  });
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: "#f8f8f6", roughness: 0.92, metalness: 0.0
-  });
-  const ceilMat = new THREE.MeshStandardMaterial({
-    color: "#fafafa", roughness: 0.96
-  });
-  const moulding = new THREE.MeshStandardMaterial({
-    color: "#f0f0ee", roughness: 0.82
-  });
-  const baseboard = new THREE.MeshStandardMaterial({
-    color: "#e8e9e8", roughness: 0.85
-  });
-
-  // Floor
-  const floorGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_LEN, 1, 1);
-  const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  room.add(floor);
-
-  // Subtle reflection plane (semi-transparent plane just above floor)
-  const reflGeo  = new THREE.PlaneGeometry(ROOM_W, ROOM_LEN);
-  const reflMat  = new THREE.MeshStandardMaterial({
-    color: "#d4d6d5", roughness: 0.1, metalness: 0.35,
-    transparent: true, opacity: 0.18
-  });
-  const refl = new THREE.Mesh(reflGeo, reflMat);
-  refl.rotation.x = -Math.PI / 2;
-  refl.position.y = 0.002;
-  room.add(refl);
-
-  // Ceiling
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_LEN), ceilMat);
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.y = ROOM_H;
-  room.add(ceiling);
-
-  // Left and right walls
-  const wallGeo = new THREE.PlaneGeometry(ROOM_LEN, ROOM_H);
-  const leftWall = new THREE.Mesh(wallGeo, wallMat);
-  leftWall.rotation.y = Math.PI / 2;
-  leftWall.position.set(-WALL_X, ROOM_H / 2, 0);
-  leftWall.receiveShadow = true;
-  room.add(leftWall);
-
-  const rightWall = new THREE.Mesh(wallGeo, wallMat);
-  rightWall.rotation.y = -Math.PI / 2;
-  rightWall.position.set(WALL_X, ROOM_H / 2, 0);
-  rightWall.receiveShadow = true;
-  room.add(rightWall);
-
-  // Back + front walls (end caps)
-  const capGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
-  const backWall = new THREE.Mesh(capGeo, wallMat);
-  backWall.position.set(0, ROOM_H / 2, -ROOM_LEN / 2);
-  room.add(backWall);
-
-  const frontWall = new THREE.Mesh(capGeo, wallMat);
-  frontWall.rotation.y = Math.PI;
-  frontWall.position.set(0, ROOM_H / 2, ROOM_LEN / 2);
-  room.add(frontWall);
-
-  // Crown moulding (top rail on left/right walls)
-  const mouldGeo = new THREE.BoxGeometry(ROOM_LEN, 0.065, 0.12);
-  [-WALL_X, WALL_X].forEach((x, idx) => {
-    const m = new THREE.Mesh(mouldGeo, moulding);
-    m.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
-    // BoxGeometry along Z — built along X so rotate
-    const mRow = new THREE.Mesh(new THREE.BoxGeometry(ROOM_LEN + 0.3, 0.065, 0.1), moulding);
-    mRow.position.set(0, ROOM_H - 0.032, x === -WALL_X ? -WALL_X + 0.05 : WALL_X - 0.05);
-    room.add(mRow);
-  });
-
-  // Picture rail (thin horizontal band where artworks sit)
-  const railY = 2.9;
-  const railGeo = new THREE.BoxGeometry(ROOM_LEN + 0.1, 0.04, 0.06);
-  [-WALL_X + 0.03, WALL_X - 0.03].forEach((x) => {
-    const rail = new THREE.Mesh(railGeo, moulding);
-    rail.position.set(0, railY, x);
-    room.add(rail);
-  });
-
-  // Skirting baseboard
-  const skirtGeo = new THREE.BoxGeometry(ROOM_LEN + 0.1, 0.18, 0.05);
-  [-WALL_X + 0.025, WALL_X - 0.025].forEach((x) => {
-    const s = new THREE.Mesh(skirtGeo, baseboard);
-    s.position.set(0, 0.09, x);
-    room.add(s);
-  });
-
-  // Ceiling coffers — thin recessed lines
-  const cofferMat = new THREE.MeshStandardMaterial({ color: "#f2f2f0", roughness: 0.95 });
-  for (let zc = -ROOM_LEN / 2 + 4; zc < ROOM_LEN / 2; zc += 5.2) {
-    const bar = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.025, 0.07), cofferMat);
-    bar.position.set(0, ROOM_H - 0.012, zc);
-    room.add(bar);
-  }
-
-  return room;
-}
-
-scene.add(buildRoom());
-
-// ─── Wall Slots ────────────────────────────────────────────────────────────
-// Place 24 slots per wall, spanning almost the full gallery length
-const wallSlots = [];
-const slotCount  = MAX_ARTWORKS / 2;  // 24 per side
-const slotZStart = -(ROOM_LEN / 2 - 3.2);
-for (let i = 0; i < slotCount; i++) {
-  const z = slotZStart + i * SLOT_SPACING;
-  const artY = 2.14;  // centre height of artwork
-  wallSlots.push({ pos: new THREE.Vector3(-WALL_X + 0.05, artY, z), ry: Math.PI / 2 });
-  wallSlots.push({ pos: new THREE.Vector3(WALL_X - 0.05, artY, z), ry: -Math.PI / 2 });
-}
-
-// ─── Artwork Group ─────────────────────────────────────────────────────────
+/* ── Gallery + art groups ─────────────────────────────────────────────────── */
+const galleryGroup = new THREE.Group();
+scene.add(galleryGroup);
 const artGroup = new THREE.Group();
 scene.add(artGroup);
 
-// ─── Shared geometry / material pools (reused across all artworks) ─────────
-const VOXEL_SIZE  = 0.048;       // each voxel cube side length
-const GRID        = 40;          // 40×40 pixel normie grid
-const CELL        = 1.98 / GRID; // artwork canvas size / grid
-const sharedVoxGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+let currentRoomLen = 52;
+let wallSlots = [];
+const WALL_X = ROOM_W / 2;
 
-// Frame and backing shared
-const frameMat  = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.7,  metalness: 0.06 });
-const backMat   = new THREE.MeshStandardMaterial({ color: "#fafaf8", roughness: 0.97 });
-const placeholderMat = new THREE.MeshStandardMaterial({ color: "#e6e8e7", roughness: 0.97 });
+/* ── Build gallery for N artworks ─────────────────────────────────────────── */
+function buildGallery(count) {
+  while (galleryGroup.children.length) {
+    const c = galleryGroup.children[0];
+    galleryGroup.remove(c);
+    c.traverse((ch) => { if (ch.isMesh) ch.geometry?.dispose(); });
+  }
 
-// ─── Label texture helper ──────────────────────────────────────────────────
+  const slotsPerSide = Math.ceil(count / 2);
+  currentRoomLen = Math.max(30, slotsPerSide * SLOT_SPACING + 10);
+
+  wallSlots = [];
+  const slotZStart = -(currentRoomLen / 2 - 5);
+  for (let i = 0; i < slotsPerSide; i++) {
+    const z = slotZStart + i * SLOT_SPACING;
+    wallSlots.push({ pos: new THREE.Vector3(-WALL_X + 0.05, 2.14, z), ry: Math.PI / 2 });
+    wallSlots.push({ pos: new THREE.Vector3( WALL_X - 0.05, 2.14, z), ry: -Math.PI / 2 });
+  }
+
+  // Floor
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  galleryGroup.add(floor);
+
+  // Floor reflection
+  const reflMat = new THREE.MeshStandardMaterial({
+    color: "#d4d6d5", roughness: 0.1, metalness: 0.35,
+    transparent: true, opacity: 0.15,
+  });
+  const refl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), reflMat);
+  refl.rotation.x = -Math.PI / 2;
+  refl.position.y = 0.002;
+  galleryGroup.add(refl);
+
+  // Ceiling
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, currentRoomLen), ceilMat);
+  ceil.rotation.x = Math.PI / 2;
+  ceil.position.y = ROOM_H;
+  galleryGroup.add(ceil);
+
+  // Left & right walls
+  const wallGeo = new THREE.PlaneGeometry(currentRoomLen, ROOM_H);
+  const lw = new THREE.Mesh(wallGeo, wallMat);
+  lw.rotation.y = Math.PI / 2;
+  lw.position.set(-WALL_X, ROOM_H / 2, 0);
+  lw.receiveShadow = true;
+  galleryGroup.add(lw);
+  const rw = new THREE.Mesh(wallGeo, wallMat);
+  rw.rotation.y = -Math.PI / 2;
+  rw.position.set(WALL_X, ROOM_H / 2, 0);
+  rw.receiveShadow = true;
+  galleryGroup.add(rw);
+
+  // End caps
+  const capGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
+  const back = new THREE.Mesh(capGeo, wallMat);
+  back.position.set(0, ROOM_H / 2, -currentRoomLen / 2);
+  galleryGroup.add(back);
+  const front = new THREE.Mesh(capGeo, wallMat);
+  front.rotation.y = Math.PI;
+  front.position.set(0, ROOM_H / 2, currentRoomLen / 2);
+  galleryGroup.add(front);
+
+  // Crown moulding
+  const mouldGeo = new THREE.BoxGeometry(currentRoomLen + 0.3, 0.065, 0.1);
+  [-WALL_X + 0.05, WALL_X - 0.05].forEach((x) => {
+    const m = new THREE.Mesh(mouldGeo, mouldMat);
+    m.position.set(0, ROOM_H - 0.032, x);
+    galleryGroup.add(m);
+  });
+
+  // Picture rail
+  const railGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.04, 0.06);
+  [-WALL_X + 0.03, WALL_X - 0.03].forEach((x) => {
+    const r = new THREE.Mesh(railGeo, mouldMat);
+    r.position.set(0, 2.9, x);
+    galleryGroup.add(r);
+  });
+
+  // Baseboard
+  const skirtGeo = new THREE.BoxGeometry(currentRoomLen + 0.1, 0.18, 0.05);
+  [-WALL_X + 0.025, WALL_X - 0.025].forEach((x) => {
+    const s = new THREE.Mesh(skirtGeo, baseMat);
+    s.position.set(0, 0.09, x);
+    galleryGroup.add(s);
+  });
+
+  // Ceiling coffers
+  const cofferMat2 = new THREE.MeshStandardMaterial({ color: "#f2f2f0", roughness: 0.95 });
+  for (let zc = -currentRoomLen / 2 + 4; zc < currentRoomLen / 2; zc += 5.2) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.025, 0.07), cofferMat2);
+    bar.position.set(0, ROOM_H - 0.012, zc);
+    galleryGroup.add(bar);
+  }
+
+  // RectAreaLight track lighting (scales with gallery length)
+  const trackColor = 0xfff8f0;
+  const trackI = 6;
+  const trackCount = Math.max(4, Math.ceil(currentRoomLen / 5));
+  const trackStart = -(currentRoomLen / 2 - 3);
+  const trackStep = (currentRoomLen - 6) / Math.max(1, trackCount - 1);
+  for (let i = 0; i < trackCount; i++) {
+    const z = trackStart + i * trackStep;
+    const l = new THREE.RectAreaLight(trackColor, trackI, 1.4, 0.6);
+    l.position.set(-WALL_X + 1.8, ROOM_H - 0.35, z);
+    l.lookAt(-WALL_X + 0.1, 1.9, z);
+    galleryGroup.add(l);
+    const r = new THREE.RectAreaLight(trackColor, trackI, 1.4, 0.6);
+    r.position.set(WALL_X - 1.8, ROOM_H - 0.35, z);
+    r.lookAt(WALL_X - 0.1, 1.9, z);
+    galleryGroup.add(r);
+  }
+
+  camera.position.set(0, 1.7, currentRoomLen / 2 - 2);
+}
+
+buildGallery(48);
+
+/* ── Label texture ────────────────────────────────────────────────────────── */
 function makeLabelTex(tokenId, type, ap) {
-  const lc = document.createElement("canvas");
-  lc.width = 512; lc.height = 72;
-  const ctx = lc.getContext("2d");
-
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 72;
+  const ctx = c.getContext("2d");
   ctx.fillStyle = "rgba(240,240,238,0.92)";
   ctx.fillRect(0, 0, 512, 72);
-
-  // Left accent bar
   ctx.fillStyle = "rgba(72,73,75,0.45)";
   ctx.fillRect(0, 0, 3, 72);
-
   ctx.fillStyle = "#48494b";
   ctx.font = '500 22px "IBM Plex Mono", monospace';
-  ctx.fillText(`normie #${tokenId}`, 14, 32);
-
+  ctx.fillText("normie #" + tokenId, 14, 32);
   ctx.fillStyle = "#82848a";
   ctx.font = '400 16px "IBM Plex Mono", monospace';
-  const sub = [type, ap ? `${ap} ap` : null].filter(Boolean).join(" · ");
+  const sub = [type, ap ? ap + " ap" : null].filter(Boolean).join(" \u00b7 ");
   ctx.fillText(sub, 14, 56);
-
-  const tex = new THREE.CanvasTexture(lc);
+  const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
   return tex;
 }
 
-// ─── Build voxel artwork ───────────────────────────────────────────────────
-function buildVoxelArtwork(tokenId, rgbaData, meta = {}) {
+/* ── Build voxel artwork ──────────────────────────────────────────────────── */
+function buildVoxelArtwork(tokenId, rgbaData, meta) {
   const group = new THREE.Group();
 
-  const ART_W = 2.12;
-  const ART_H = 2.12;
-
-  // Outer frame (moulding)
+  // Frame
   const frameOuter = new THREE.Mesh(
-    new THREE.BoxGeometry(ART_W + 0.2, ART_H + 0.2, 0.06),
-    frameMat
+    new THREE.BoxGeometry(ART_W + 0.2, ART_H + 0.2, 0.06), frameMat
   );
   frameOuter.position.z = -0.06;
   group.add(frameOuter);
 
-  // Inner backing panel
+  // Backing
   const backing = new THREE.Mesh(
-    new THREE.BoxGeometry(ART_W, ART_H, 0.03),
-    backMat
+    new THREE.BoxGeometry(ART_W, ART_H, 0.03), backMat
   );
   backing.position.z = -0.03;
   group.add(backing);
 
-  // Build InstancedMesh from pixel data
-  // Separate dark (foreground) and light pixels for two-pass rendering
-  const darkCoords  = [], darkColors  = [];
-  const lightCoords = [], lightColors = [];
-
+  // Parse pixels into dark / light buckets
+  const darkC = [], darkCol = [], lightC = [], lightCol = [];
   for (let py = 0; py < GRID; py++) {
     for (let px = 0; px < GRID; px++) {
-      const idx = (py * GRID + px) * 4;
-      const r = rgbaData[idx];
-      const g = rgbaData[idx + 1];
-      const b = rgbaData[idx + 2];
-      const a = rgbaData[idx + 3];
-      if (a < 10) continue;
-
-      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-      const isDark = luminance < 45;
-
+      const i = (py * GRID + px) * 4;
+      const rv = rgbaData[i], gv = rgbaData[i + 1], bv = rgbaData[i + 2], av = rgbaData[i + 3];
+      if (av < 10) continue;
+      const lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
       const wx = (px - GRID / 2 + 0.5) * CELL;
       const wy = (GRID / 2 - py - 0.5) * CELL;
-
-      if (isDark) {
-        darkCoords.push([wx, wy]);
-        darkColors.push([r / 255, g / 255, b / 255]);
+      if (lum < 45) {
+        darkC.push([wx, wy]);
+        darkCol.push([rv / 255, gv / 255, bv / 255]);
       } else {
-        lightCoords.push([wx, wy]);
-        lightColors.push([r / 255, g / 255, b / 255]);
+        lightC.push([wx, wy]);
+        lightCol.push([rv / 255, gv / 255, bv / 255]);
       }
     }
   }
 
-  // Light pixels — slightly raised flat layer
-  if (lightCoords.length) {
-    const lightGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 1.3);
-    const lightMat  = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0.0, vertexColors: true });
-    const inst       = new THREE.InstancedMesh(lightGeom, lightMat, lightCoords.length);
-    const mtx = new THREE.Matrix4();
-    const col = new THREE.Color();
-    for (let i = 0; i < lightCoords.length; i++) {
-      const [x, y] = lightCoords[i];
-      mtx.setPosition(x, y, VOXEL_SIZE * 0.65);
-      inst.setMatrixAt(i, mtx);
-      col.setRGB(...lightColors[i]);
+  // Light voxels (slight raise)
+  if (lightC.length) {
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.62, vertexColors: true });
+    const inst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 1.3), mat, lightC.length
+    );
+    const m4 = new THREE.Matrix4(), col = new THREE.Color();
+    for (let i = 0; i < lightC.length; i++) {
+      m4.setPosition(lightC[i][0], lightC[i][1], VOXEL_SIZE * 0.65);
+      inst.setMatrixAt(i, m4);
+      col.setRGB(lightCol[i][0], lightCol[i][1], lightCol[i][2]);
       inst.setColorAt(i, col);
     }
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    inst.receiveShadow = true;
-    inst.castShadow    = true;
+    inst.castShadow = inst.receiveShadow = true;
     group.add(inst);
   }
 
-  // Dark / off-black pixels — deeper extrusion, high-quality shadow
-  if (darkCoords.length) {
-    const darkGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 4.5);
-    const darkMat  = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.08, vertexColors: true });
-    const inst      = new THREE.InstancedMesh(darkGeom, darkMat, darkCoords.length);
-    const mtx = new THREE.Matrix4();
-    const col = new THREE.Color();
-    for (let i = 0; i < darkCoords.length; i++) {
-      const [x, y] = darkCoords[i];
-      mtx.setPosition(x, y, VOXEL_SIZE * 2.25);
-      inst.setMatrixAt(i, mtx);
-      col.setRGB(...darkColors[i]);
+  // Dark voxels (deep extrusion)
+  if (darkC.length) {
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.08, vertexColors: true });
+    const inst = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 4.5), mat, darkC.length
+    );
+    const m4 = new THREE.Matrix4(), col = new THREE.Color();
+    for (let i = 0; i < darkC.length; i++) {
+      m4.setPosition(darkC[i][0], darkC[i][1], VOXEL_SIZE * 2.25);
+      inst.setMatrixAt(i, m4);
+      col.setRGB(darkCol[i][0], darkCol[i][1], darkCol[i][2]);
       inst.setColorAt(i, col);
     }
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    inst.receiveShadow = true;
-    inst.castShadow    = true;
+    inst.castShadow = inst.receiveShadow = true;
     group.add(inst);
   }
 
-  // Nameplate (label)
-  const labelTex = makeLabelTex(tokenId, meta.type ?? "human", meta.ap ?? null);
-  const labelH   = 0.28;
-  const label    = new THREE.Mesh(
-    new THREE.PlaneGeometry(ART_W + 0.2, labelH),
+  // Nameplate
+  const labelTex = makeLabelTex(tokenId, meta.type || "human", meta.ap);
+  const label = new THREE.Mesh(
+    new THREE.PlaneGeometry(ART_W + 0.2, 0.28),
     new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
   );
-  label.position.set(0, -(ART_H / 2 + 0.2 + labelH / 2 + 0.04), 0.01);
+  label.position.set(0, -(ART_H / 2 + 0.34), 0.01);
   group.add(label);
 
-  // Subtle point light in front of artwork (spotlight effect)
+  // Per-artwork spotlight
   const spot = new THREE.PointLight(0xfff5e0, 0.9, 2.6, 2.2);
   spot.position.set(0, 0.4, 0.75);
   group.add(spot);
 
-  // Reveal animation state
+  // Reveal state
   group.userData.revealT = 0;
   group.userData.revealing = true;
   group.scale.set(0.001, 0.001, 0.001);
@@ -381,102 +336,101 @@ function buildVoxelArtwork(tokenId, rgbaData, meta = {}) {
   return group;
 }
 
-// ─── Placeholder frame (shown while loading) ────────────────────────────────
+/* ── Placeholder frame ────────────────────────────────────────────────────── */
 function buildPlaceholder() {
   const g = new THREE.Group();
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(2.32, 2.32, 0.04),
-    placeholderMat
-  );
-  g.add(frame);
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(2.32, 2.32, 0.04), placeMat));
   return g;
 }
 
-// ─── Dispose helpers ────────────────────────────────────────────────────────
-function disposeMesh(obj) {
+/* ── Dispose helpers ──────────────────────────────────────────────────────── */
+function dispose(obj) {
   if (!obj) return;
-  obj.traverse(child => {
-    if (child.isMesh || child.isInstancedMesh) {
-      child.geometry?.dispose();
-      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
-      else child.material?.dispose();
+  obj.traverse((c) => {
+    if (c.isMesh || c.isInstancedMesh) {
+      c.geometry?.dispose();
+      [].concat(c.material).forEach((m) => m?.dispose());
     }
-    if (child.isSprite) child.material?.map?.dispose();
   });
 }
-
-function clearArtwork() {
+function clearArt() {
   while (artGroup.children.length) {
     const c = artGroup.children[artGroup.children.length - 1];
     artGroup.remove(c);
-    disposeMesh(c);
+    dispose(c);
   }
 }
 
-// ─── API calls ──────────────────────────────────────────────────────────────
+/* ── API calls ────────────────────────────────────────────────────────────── */
 async function fetchOwnedTokenIds(address) {
   const ids = [];
-  let continuation = null;
+  let cont = null;
   do {
-    const base = `https://api.reservoir.tools/users/${address}/tokens/v7?collection=${NORMIES_CONTRACT}&limit=200&sortBy=acquiredAt&sortDirection=desc`;
-    const url  = continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
-    const res  = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
-    if (!res.ok) throw new Error(`reservoir ${res.status}`);
+    const base = "https://api.reservoir.tools/users/" + address +
+      "/tokens/v7?collection=" + NORMIES_CONTRACT +
+      "&limit=200&sortBy=acquiredAt&sortDirection=desc";
+    const url = cont ? base + "&continuation=" + encodeURIComponent(cont) : base;
+    const res = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) throw new Error("reservoir " + res.status);
     const data = await res.json();
-    for (const e of data.tokens ?? []) {
-      const id = Number.parseInt(e?.token?.tokenId ?? "", 10);
-      if (!Number.isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
+    for (const e of data.tokens || []) {
+      const id = parseInt(e?.token?.tokenId ?? "", 10);
+      if (!isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
     }
-    continuation = data.continuation ?? null;
-  } while (continuation);
+    cont = data.continuation || null;
+  } while (cont);
   return [...new Set(ids)];
 }
 
 async function fetchTokenMeta(tokenId) {
   try {
-    const res = await fetch(`${NORMIES_API}/normie/${tokenId}/canvas/info`, { cache: "no-store" });
-    if (!res.ok) return {};
-    return await res.json();
+    const r = await fetch(NORMIES_API + "/normie/" + tokenId + "/canvas/info", { cache: "no-store" });
+    return r.ok ? await r.json() : {};
   } catch { return {}; }
 }
 
 async function fetchImageRGBA(tokenId) {
-  const res = await fetch(`${NORMIES_API}/normie/${tokenId}/image.png`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`image ${res.status}`);
-  const blob   = await res.blob();
-  const bitmap = await createImageBitmap(blob);
-  const offscreen = new OffscreenCanvas(GRID, GRID);
-  const ctx = offscreen.getContext("2d", { willReadFrequently: true });
+  const res = await fetch(NORMIES_API + "/normie/" + tokenId + "/image.png", { cache: "no-store" });
+  if (!res.ok) throw new Error("image " + res.status);
+  const bmp = await createImageBitmap(await res.blob());
+  const oc = new OffscreenCanvas(GRID, GRID);
+  const ctx = oc.getContext("2d", { willReadFrequently: true });
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bitmap, 0, 0, GRID, GRID);
+  ctx.drawImage(bmp, 0, 0, GRID, GRID);
   return ctx.getImageData(0, 0, GRID, GRID).data;
 }
 
-// ─── Progress helpers ───────────────────────────────────────────────────────
-function setProgress(done, total, label) {
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-  progressBar.style.setProperty("--pct", `${pct}%`);
-  progressLabel.textContent = label;
-  progressWrap.classList.toggle("visible", done < total);
-}
-
-// ─── Resolve a single address or ENS name → 0x ────────────────────────────────────
+/* ── ENS resolver ─────────────────────────────────────────────────────────── */
 async function resolveAddress(raw) {
   const v = raw.trim();
   if (!v) throw new Error("empty entry");
   if (/^0x[a-fA-F0-9]{40}$/i.test(v)) return v.toLowerCase();
-  // ENS or other name — public resolver, no API key required
-  const res = await fetch(`https://api.ensideas.com/ens/resolve/${encodeURIComponent(v)}`);
-  if (!res.ok) throw new Error(`could not resolve “${v}”`);
+  const res = await fetch("https://api.ensideas.com/ens/resolve/" + encodeURIComponent(v));
+  if (!res.ok) throw new Error('could not resolve "' + v + '"');
   const data = await res.json();
-  if (!data?.address || !/^0x[a-fA-F0-9]{40}$/i.test(data.address)) {
-    throw new Error(`no address found for “${v}”`);
-  }
+  if (!data?.address || !/^0x[a-fA-F0-9]{40}$/i.test(data.address))
+    throw new Error('no address found for "' + v + '"');
   return data.address.toLowerCase();
 }
 
-// ─── Enter / exit museum ────────────────────────────────────────────────────
+/* ── UI helpers ───────────────────────────────────────────────────────────── */
+function setProgress(done, total, label) {
+  progressBar.style.setProperty("--pct", (total > 0 ? Math.round(done / total * 100) : 0) + "%");
+  progressLabel.textContent = label;
+  progressWrap.classList.toggle("visible", done < total);
+}
+function setStatus(msg, err) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("error", !!err);
+}
+function setBusy(b) {
+  loadBtn.disabled = b;
+  walletInput.disabled = b;
+}
+
+/* ── Museum state ─────────────────────────────────────────────────────────── */
 let inMuseum = false;
+let mobileYaw = 0, mobilePitch = 0;
 
 function enterMuseum() {
   inMuseum = true;
@@ -485,281 +439,256 @@ function enterMuseum() {
 }
 
 function exitMuseum() {
-  controls.unlock();
+  if (controls) controls.unlock();
   inMuseum = false;
   overlayEl.classList.remove("hidden");
   hudEl.classList.add("hud-hidden");
-  clearArtwork();
+  clearArt();
   setStatus("");
-  camera.position.set(0, 1.7, ROOM_LEN / 2 - 2);
+  camera.position.set(0, 1.7, currentRoomLen / 2 - 2);
   camera.rotation.set(0, 0, 0);
+  mobileYaw = 0;
+  mobilePitch = 0;
 }
 
-exitBtn.addEventListener("click", exitMuseum);
-
-// ─── Main load flow ─────────────────────────────────────────────────────────
+/* ── Main load flow ───────────────────────────────────────────────────────── */
 async function loadMuseumForWallets(rawInput) {
-  const entries = rawInput.split(",").map(s => s.trim()).filter(Boolean);
+  var entries = rawInput.split(",").map(function(s) { return s.trim(); }).filter(Boolean);
   if (!entries.length) { setStatus("paste a wallet address or ENS name.", true); return; }
 
   setBusy(true);
-  setStatus(`resolving ${entries.length > 1 ? entries.length + " entries" : "address"}…`);
+  setStatus("resolving " + (entries.length > 1 ? entries.length + " entries" : "address") + "\u2026");
 
-  let addresses;
+  var addresses;
+  try { addresses = await Promise.all(entries.map(resolveAddress)); }
+  catch (e) { setStatus(e.message, true); setBusy(false); return; }
+
+  setStatus("scanning wallet" + (addresses.length > 1 ? "s" : "") + "\u2026");
+
+  var allIds;
   try {
-    addresses = await Promise.all(entries.map(resolveAddress));
-  } catch (err) {
-    setStatus(err.message, true);
-    setBusy(false);
-    return;
-  }
-
-  setStatus(`scanning wallet${addresses.length > 1 ? "s" : ""}…`);
-
-  let allIds;
-  try {
-    const perWallet = await Promise.all(addresses.map(fetchOwnedTokenIds));
-    allIds = [...new Set(perWallet.flat())];
-  } catch (err) {
-    setStatus(`wallet lookup failed: ${err.message}`, true);
-    setBusy(false);
-    return;
-  }
+    var per = await Promise.all(addresses.map(fetchOwnedTokenIds));
+    allIds = [...new Set(per.flat())];
+  } catch (e) { setStatus("wallet lookup failed: " + e.message, true); setBusy(false); return; }
 
   if (!allIds.length) {
-    setStatus(`no normies found in ${addresses.length > 1 ? "these wallets" : "this wallet"}.`);
+    setStatus("no normies found in " + (addresses.length > 1 ? "these wallets" : "this wallet") + ".");
     setBusy(false);
     return;
   }
 
-  const shown = allIds.slice(0, MAX_ARTWORKS);
-  setStatus(`loading ${shown.length} normies…`);
+  var shown = allIds.slice(0, MAX_ARTWORKS);
 
-  clearArtwork();
+  buildGallery(shown.length);
+  clearArt();
   enterMuseum();
-  if (!isTouch) controls.lock();
+  if (!isTouch && controls) controls.lock();
   setBusy(false);
 
+  setStatus("loading " + shown.length + " normies\u2026");
   hudMetaEl.textContent = addresses.length === 1
-    ? `${addresses[0].slice(0, 8)}…${addresses[0].slice(-5)} · ${allIds.length} normies`
-    : `${addresses.length} wallets · ${allIds.length} normies`;
-  setProgress(0, shown.length, `loading 0 / ${shown.length}`);
+    ? addresses[0].slice(0, 8) + "\u2026" + addresses[0].slice(-5) + " \u00b7 " + allIds.length + " normies"
+    : addresses.length + " wallets \u00b7 " + allIds.length + " normies";
+  setProgress(0, shown.length, "loading 0 / " + shown.length);
 
-  const placeholders = shown.map((_, i) => {
-    const slot = wallSlots[i];
-    const ph   = buildPlaceholder();
+  var phs = shown.map(function(_, i) {
+    var slot = wallSlots[i];
+    if (!slot) return null;
+    var ph = buildPlaceholder();
     ph.position.copy(slot.pos);
     ph.rotation.y = slot.ry;
     artGroup.add(ph);
     return ph;
   });
 
-  let done = 0;
-  await Promise.allSettled(shown.map(async (tokenId, i) => {
+  var done = 0;
+  await Promise.allSettled(shown.map(async function(tokenId, i) {
     try {
-      const [rgba, meta] = await Promise.all([
-        fetchImageRGBA(tokenId),
-        fetchTokenMeta(tokenId)
-      ]);
-      const slot    = wallSlots[i];
-      const artwork = buildVoxelArtwork(tokenId, rgba, {
-        type: meta?.type ?? "human",
-        ap:   meta?.actionPoints ?? null
+      var results = await Promise.all([fetchImageRGBA(tokenId), fetchTokenMeta(tokenId)]);
+      var rgba = results[0], meta = results[1];
+      var slot = wallSlots[i];
+      if (!slot) return;
+      var art = buildVoxelArtwork(tokenId, rgba, {
+        type: meta?.type || "human",
+        ap: meta?.actionPoints || null,
       });
-      artwork.position.copy(slot.pos);
-      artwork.rotation.y = slot.ry;
-      artGroup.remove(placeholders[i]);
-      disposeMesh(placeholders[i]);
-      artGroup.add(artwork);
-    } catch { /* silent */ }
+      art.position.copy(slot.pos);
+      art.rotation.y = slot.ry;
+      if (phs[i]) { artGroup.remove(phs[i]); dispose(phs[i]); }
+      artGroup.add(art);
+    } catch (ignored) {}
     done++;
-    setProgress(done, shown.length, `loading ${done} / ${shown.length}`);
+    setProgress(done, shown.length, "loading " + done + " / " + shown.length);
   }));
 
   setProgress(shown.length, shown.length, "");
 }
 
-// ─── UI helpers ──────────────────────────────────────────────────────────────
-function setStatus(msg, isError = false) {
-  statusEl.textContent = msg;
-  statusEl.classList.toggle("error", isError);
+/* ── Event listeners ──────────────────────────────────────────────────────── */
+aboutBtn.addEventListener("click", function() { aboutModal.classList.remove("modal-hidden"); });
+aboutCloseBtn.addEventListener("click", function() { aboutModal.classList.add("modal-hidden"); });
+aboutModal.addEventListener("click", function(e) { if (e.target === aboutModal) aboutModal.classList.add("modal-hidden"); });
+exitBtn.addEventListener("click", exitMuseum);
+loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
+walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
+
+/* ── Pointer lock (desktop) ───────────────────────────────────────────────── */
+if (!isTouch && controls) {
+  renderer.domElement.addEventListener("click", function() { if (inMuseum) controls.lock(); });
+  controls.addEventListener("lock", function()   { document.body.classList.add("locked"); });
+  controls.addEventListener("unlock", function() { document.body.classList.remove("locked"); });
 }
 
-function setBusy(busy) {
-  loadBtn.disabled     = busy;
-  walletInput.disabled = busy;
-}
-
-// ─── About modal ─────────────────────────────────────────────────────────────
-const aboutModal    = document.getElementById("about-modal");
-const aboutBtn      = document.getElementById("aboutBtn");
-const aboutCloseBtn = document.getElementById("aboutCloseBtn");
-
-aboutBtn.addEventListener("click", () => aboutModal.classList.remove("modal-hidden"));
-aboutCloseBtn.addEventListener("click", () => aboutModal.classList.add("modal-hidden"));
-aboutModal.addEventListener("click", e => { if (e.target === aboutModal) aboutModal.classList.add("modal-hidden"); });
-
-loadBtn.addEventListener("click", () => loadMuseumForWallets(walletInput.value));
-walletInput.addEventListener("keydown", e => { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
-
-// ─── Pointer lock (desktop only) ─────────────────────────────────────────────────────────────────
+/* ── Keyboard (desktop) ───────────────────────────────────────────────────── */
+var keys = { w: false, s: false, a: false, d: false, shift: false };
 if (!isTouch) {
-  renderer.domElement.addEventListener("click", () => { if (inMuseum) controls.lock(); });
-  controls.addEventListener("lock",   () => document.body.classList.add("locked"));
-  controls.addEventListener("unlock", () => document.body.classList.remove("locked"));
-}
-
-// ─── Keyboard movement ───────────────────────────────────────────────────────
-const keys = { w: false, s: false, a: false, d: false, shift: false };
-if (!isTouch) {
-  window.addEventListener("keydown", e => {
-    if (e.code === "KeyW")    keys.w = true;
-    if (e.code === "KeyS")    keys.s = true;
-    if (e.code === "KeyA")    keys.a = true;
-    if (e.code === "KeyD")    keys.d = true;
+  window.addEventListener("keydown", function(e) {
+    if (e.code === "KeyW") keys.w = true;
+    if (e.code === "KeyS") keys.s = true;
+    if (e.code === "KeyA") keys.a = true;
+    if (e.code === "KeyD") keys.d = true;
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
   });
-  window.addEventListener("keyup", e => {
-    if (e.code === "KeyW")    keys.w = false;
-    if (e.code === "KeyS")    keys.s = false;
-    if (e.code === "KeyA")    keys.a = false;
-    if (e.code === "KeyD")    keys.d = false;
+  window.addEventListener("keyup", function(e) {
+    if (e.code === "KeyW") keys.w = false;
+    if (e.code === "KeyS") keys.s = false;
+    if (e.code === "KeyA") keys.a = false;
+    if (e.code === "KeyD") keys.d = false;
     if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
   });
 }
 
-const vel  = new THREE.Vector3();
-const dir  = new THREE.Vector3();
-const clock = new THREE.Clock();
+/* ── Touch controls ───────────────────────────────────────────────────────── */
+var JOY_R = 52, LOOK_SENS = 0.0038;
+var joy  = { on: false, id: -1, sx: 0, sy: 0, dx: 0, dy: 0 };
+var look = { on: false, id: -1, lx: 0, ly: 0 };
 
-// ─── Touch controls ─────────────────────────────────────────────────────────────────────────────
-const JOY_RADIUS       = 52;
-const LOOK_SENSITIVITY = 0.0038;
-const joystick = { active: false, id: -1, startX: 0, startY: 0, dx: 0, dy: 0 };
-const lookDrag = { active: false, id: -1, lastX: 0, lastY: 0 };
-
-function updateJoystickUI(nx, ny) {
-  const knob = document.getElementById("joystick-knob");
-  if (knob) knob.style.transform = `translate(${nx * JOY_RADIUS}px, ${ny * JOY_RADIUS}px)`;
+function joyUI(nx, ny) {
+  var k = $("joystick-knob");
+  if (k) k.style.transform = "translate(" + (nx * JOY_R) + "px, " + (ny * JOY_R) + "px)";
 }
 
 if (isTouch) {
-  const cnv = renderer.domElement;
+  var cnv = renderer.domElement;
 
-  cnv.addEventListener("touchstart", e => {
+  cnv.addEventListener("touchstart", function(e) {
     if (!inMuseum) return;
     e.preventDefault();
-    for (const t of e.changedTouches) {
-      const isLeft = t.clientX < window.innerWidth * 0.45;
-      if (isLeft && !joystick.active) {
-        Object.assign(joystick, { active: true, id: t.identifier, startX: t.clientX, startY: t.clientY, dx: 0, dy: 0 });
-        document.getElementById("joystick-base").style.opacity = "1";
-        updateJoystickUI(0, 0);
-      } else if (!isLeft && !lookDrag.active) {
-        Object.assign(lookDrag, { active: true, id: t.identifier, lastX: t.clientX, lastY: t.clientY });
+    for (var ti = 0; ti < e.changedTouches.length; ti++) {
+      var t = e.changedTouches[ti];
+      if (t.clientX < innerWidth * 0.45 && !joy.on) {
+        joy.on = true; joy.id = t.identifier; joy.sx = t.clientX; joy.sy = t.clientY; joy.dx = 0; joy.dy = 0;
+        $("joystick-base").style.opacity = "1";
+        joyUI(0, 0);
+      } else if (t.clientX >= innerWidth * 0.45 && !look.on) {
+        look.on = true; look.id = t.identifier; look.lx = t.clientX; look.ly = t.clientY;
       }
     }
   }, { passive: false });
 
-  cnv.addEventListener("touchmove", e => {
+  cnv.addEventListener("touchmove", function(e) {
     if (!inMuseum) return;
     e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === joystick.id) {
-        joystick.dx = t.clientX - joystick.startX;
-        joystick.dy = t.clientY - joystick.startY;
-        const r = Math.min(Math.hypot(joystick.dx, joystick.dy), JOY_RADIUS);
-        const a = Math.atan2(joystick.dy, joystick.dx);
-        updateJoystickUI(Math.cos(a) * r / JOY_RADIUS, Math.sin(a) * r / JOY_RADIUS);
-      } else if (t.identifier === lookDrag.id) {
-        mobileYaw   -= (t.clientX - lookDrag.lastX) * LOOK_SENSITIVITY;
-        mobilePitch  = THREE.MathUtils.clamp(
-          mobilePitch - (t.clientY - lookDrag.lastY) * LOOK_SENSITIVITY,
+    for (var ti = 0; ti < e.changedTouches.length; ti++) {
+      var t = e.changedTouches[ti];
+      if (t.identifier === joy.id) {
+        joy.dx = t.clientX - joy.sx;
+        joy.dy = t.clientY - joy.sy;
+        var r = Math.min(Math.hypot(joy.dx, joy.dy), JOY_R);
+        var a = Math.atan2(joy.dy, joy.dx);
+        joyUI(Math.cos(a) * r / JOY_R, Math.sin(a) * r / JOY_R);
+      } else if (t.identifier === look.id) {
+        mobileYaw -= (t.clientX - look.lx) * LOOK_SENS;
+        mobilePitch = THREE.MathUtils.clamp(
+          mobilePitch - (t.clientY - look.ly) * LOOK_SENS,
           -Math.PI / 2.8, Math.PI / 2.8
         );
-        lookDrag.lastX = t.clientX; lookDrag.lastY = t.clientY;
+        look.lx = t.clientX; look.ly = t.clientY;
       }
     }
   }, { passive: false });
 
-  cnv.addEventListener("touchend", e => {
-    for (const t of e.changedTouches) {
-      if (t.identifier === joystick.id) {
-        Object.assign(joystick, { active: false, id: -1, dx: 0, dy: 0 });
-        document.getElementById("joystick-base").style.opacity = "0.5";
-        updateJoystickUI(0, 0);
-      } else if (t.identifier === lookDrag.id) {
-        lookDrag.active = false; lookDrag.id = -1;
+  cnv.addEventListener("touchend", function(e) {
+    for (var ti = 0; ti < e.changedTouches.length; ti++) {
+      var t = e.changedTouches[ti];
+      if (t.identifier === joy.id) {
+        joy.on = false; joy.id = -1; joy.dx = 0; joy.dy = 0;
+        $("joystick-base").style.opacity = "0.5";
+        joyUI(0, 0);
+      } else if (t.identifier === look.id) {
+        look.on = false; look.id = -1;
       }
     }
   }, { passive: false });
 }
 
-function move(delta) {
+/* ── Movement ─────────────────────────────────────────────────────────────── */
+var vel = new THREE.Vector3();
+var dir = new THREE.Vector3();
+
+function move(dt) {
   if (isTouch) {
     camera.rotation.y = mobileYaw;
     camera.rotation.x = mobilePitch;
-    if (joystick.active) {
-      const nx = THREE.MathUtils.clamp(joystick.dx / JOY_RADIUS, -1, 1);
-      const ny = THREE.MathUtils.clamp(joystick.dy / JOY_RADIUS, -1, 1);
-      const speed = 3.5;
-      const fwd   = -ny * speed * delta;
-      const right =  nx * speed * delta;
+    if (joy.on) {
+      var nx = THREE.MathUtils.clamp(joy.dx / JOY_R, -1, 1);
+      var ny = THREE.MathUtils.clamp(joy.dy / JOY_R, -1, 1);
+      var spd = 3.5;
+      var fwd = -ny * spd * dt, right = nx * spd * dt;
       camera.position.x += Math.sin(mobileYaw) * fwd + Math.cos(mobileYaw) * right;
       camera.position.z += Math.cos(mobileYaw) * fwd - Math.sin(mobileYaw) * right;
     }
     camera.position.y = 1.7;
     camera.position.x = THREE.MathUtils.clamp(camera.position.x, -(WALL_X - 0.6), WALL_X - 0.6);
-    camera.position.z = THREE.MathUtils.clamp(camera.position.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z, -(currentRoomLen / 2 - 0.6), currentRoomLen / 2 - 0.6);
   } else {
-    const speed = keys.shift ? 6.5 : 3.2;
+    var spd2 = keys.shift ? 6.5 : 3.2;
     vel.set(0, 0, 0);
     dir.z = Number(keys.w) - Number(keys.s);
     dir.x = Number(keys.d) - Number(keys.a);
     dir.normalize();
-    if (keys.w || keys.s) vel.z = dir.z * speed * delta;
-    if (keys.a || keys.d) vel.x = dir.x * speed * delta;
+    if (keys.w || keys.s) vel.z = dir.z * spd2 * dt;
+    if (keys.a || keys.d) vel.x = dir.x * spd2 * dt;
     controls.moveRight(vel.x);
     controls.moveForward(vel.z);
-    const p = controls.getObject().position;
+    var p = controls.getObject().position;
     p.y = 1.7;
     p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
-    p.z = THREE.MathUtils.clamp(p.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+    p.z = THREE.MathUtils.clamp(p.z, -(currentRoomLen / 2 - 0.6), currentRoomLen / 2 - 0.6);
   }
 }
 
-// ─── Reveal animation ────────────────────────────────────────────────────────
-const REVEAL_SPEED = 4.2;
-function tickReveal(delta) {
-  for (const child of artGroup.children) {
-    if (!child.userData.revealing) continue;
-    child.userData.revealT = Math.min(1, child.userData.revealT + delta * REVEAL_SPEED);
-    const t  = easeOutBack(child.userData.revealT);
-    child.scale.setScalar(t);
-    if (child.userData.revealT >= 1) {
-      child.userData.revealing = false;
-      child.scale.setScalar(1);
-    }
+/* ── Reveal animation ─────────────────────────────────────────────────────── */
+function tickReveal(dt) {
+  for (var i = 0; i < artGroup.children.length; i++) {
+    var c = artGroup.children[i];
+    if (!c.userData.revealing) continue;
+    c.userData.revealT = Math.min(1, c.userData.revealT + dt * 4.2);
+    var t = easeOutBack(c.userData.revealT);
+    c.scale.setScalar(t);
+    if (c.userData.revealT >= 1) { c.userData.revealing = false; c.scale.setScalar(1); }
   }
 }
 function easeOutBack(t) {
-  const c1 = 1.70158, c3 = c1 + 1;
+  var c1 = 1.70158, c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-// ─── Render loop ─────────────────────────────────────────────────────────────
+/* ── Render loop ──────────────────────────────────────────────────────────── */
+var clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
-  const delta = Math.min(clock.getDelta(), 0.05);
-  if (isTouch ? inMuseum : controls?.isLocked) move(delta);
-  tickReveal(delta);
+  var dt = Math.min(clock.getDelta(), 0.05);
+  var shouldMove = isTouch ? inMuseum : (controls && controls.isLocked);
+  if (shouldMove) move(dt);
+  tickReveal(dt);
   renderer.render(scene, camera);
 }
 animate();
 
-// ─── Resize ──────────────────────────────────────────────────────────────────
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+/* ── Resize ───────────────────────────────────────────────────────────────── */
+window.addEventListener("resize", function() {
+  camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth, innerHeight);
 });

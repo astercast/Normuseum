@@ -2,86 +2,89 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
     <title>Normuseum · Normies Voxel Gallery</title>
     <meta name="description" content="Walk through your Normies collection in a first-person 3D voxel gallery." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
   </head>
   <body>
-
-    <!-- Full-screen 3D canvas -->
     <canvas id="scene"></canvas>
 
-    <!-- ── LANDING OVERLAY (shown before entering) ── -->
+    <!-- LANDING OVERLAY -->
     <div id="overlay">
-
-      <!-- top nav -->
       <nav id="nav">
-        <span class="nav-brand">normuseum</span>
-        <button class="nav-link" id="aboutBtn">about</button>
-        <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
-        <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
+        <a href="/" class="nav-brand">normuseum</a>
+        <div class="nav-right">
+          <button class="nav-link" id="aboutBtn" type="button">about</button>
+          <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
+          <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
+        </div>
       </nav>
 
-      <!-- centre card -->
-      <div id="landing">
-        <div class="landing-eyebrow">the museum</div>
-        <h1 class="landing-title">normuseum</h1>
-        <p class="landing-desc">walk your normies collection in a first-person voxel gallery.<br>paste one or more wallets or ENS names to populate the walls.</p>
+      <main id="landing">
+        <div class="hero-indicator">
+          <span class="indicator-dot"></span>
+          10,000 normies · ethereum mainnet · voxel gallery
+        </div>
 
-        <div class="input-row">
+        <h1 class="hero-title">
+          normies<br />
+          <span class="hero-muted">voxel</span><br />
+          museum
+        </h1>
+
+        <p class="hero-desc">
+          walk your collection in a first-person 3D gallery.<br />
+          each normie rendered as a tactile voxel relief.
+        </p>
+
+        <div class="input-group">
           <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
-            placeholder="0x… or vitalik.eth — separate multiple with commas" />
-          <button id="loadBtn" class="btn-primary">enter museum</button>
+            placeholder="0x… or vitalik.eth — comma-separate multiple" />
+          <button id="loadBtn" type="button">enter museum</button>
         </div>
 
-        <div id="status" class="status-line"></div>
+        <p id="status" class="status-line"></p>
+      </main>
 
-        <div class="landing-footer">
-          <span>10,000 on-chain normies · ethereum mainnet</span>
+      <footer id="landing-footer">
+        <span class="footer-tagline">normie eternal museum</span>
+        <span class="footer-sub">10,000 on-chain faces · all history preserved</span>
+        <div class="footer-links">
+          <a href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
+          <a href="https://opensea.io/collection/normies" target="_blank" rel="noopener">opensea ↗</a>
         </div>
-      </div>
+        <span class="footer-credit">built by <a href="https://x.com/aster0x" target="_blank" rel="noopener">@aster0x</a></span>
+      </footer>
     </div>
 
-    <!-- ── IN-MUSEUM HUD (shown after entering) ── -->
+    <!-- IN-MUSEUM HUD -->
     <div id="hud" class="hud-hidden">
-
-      <!-- top bar -->
       <div id="hud-bar">
         <span class="hud-brand">normuseum</span>
         <span id="hud-meta" class="hud-meta"></span>
-        <button id="exitBtn" class="hud-exit">✕ exit</button>
+        <button id="exitBtn" class="hud-exit" type="button">✕ exit</button>
       </div>
-
-      <!-- controls cheatsheet (bottom-right) -->
       <div id="hud-controls">
-        <div class="hud-ctrl-row"><kbd>W A S D</kbd><span>move</span></div>
-        <div class="hud-ctrl-row"><kbd>mouse</kbd><span>look</span></div>
-        <div class="hud-ctrl-row"><kbd>shift</kbd><span>sprint</span></div>
-        <div class="hud-ctrl-row"><kbd>esc</kbd><span>unlock / exit</span></div>
+        <div class="ctrl"><kbd>W A S D</kbd><span>move</span></div>
+        <div class="ctrl"><kbd>mouse</kbd><span>look</span></div>
+        <div class="ctrl"><kbd>shift</kbd><span>sprint</span></div>
+        <div class="ctrl"><kbd>esc</kbd><span>unlock</span></div>
       </div>
-
-      <!-- loading progress bar -->
       <div id="progress-wrap">
         <div id="progress-bar"></div>
         <div id="progress-label"></div>
       </div>
-
     </div>
 
-    <!-- ── ABOUT MODAL ── -->
-    <div id="about-modal" class="modal-backdrop modal-hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <!-- ABOUT MODAL -->
+    <div id="about-modal" class="modal-backdrop modal-hidden">
       <div class="modal-card">
-        <button class="modal-close" id="aboutCloseBtn" aria-label="close">✕</button>
-
-        <div class="modal-eyebrow">about</div>
-        <h2 class="modal-title" id="about-title">normuseum</h2>
-
+        <button class="modal-close" id="aboutCloseBtn" type="button">✕</button>
+        <p class="modal-eyebrow">about</p>
+        <h2 class="modal-title">normuseum</h2>
         <p class="modal-body">
           normuseum is a first-person 3D voxel gallery for the
           <a href="https://normies.art" target="_blank" rel="noopener">Normies</a>
@@ -91,9 +94,7 @@
           rendered as a high-quality voxel relief, with dark pixels physically
           extruded from the canvas to create a tactile, sculptural effect.
         </p>
-
         <div class="modal-divider"></div>
-
         <div class="modal-links">
           <a class="modal-pill" href="https://normiesarchive.xyz" target="_blank" rel="noopener">
             normiesarchive.xyz ↗
@@ -108,18 +109,12 @@
             <span class="modal-pill-sub">official collection</span>
           </a>
         </div>
-
-        <div class="modal-footer">10,000 on-chain faces · ethereum mainnet</div>
+        <p class="modal-footer-text">10,000 on-chain faces · ethereum mainnet</p>
       </div>
     </div>
 
-    <!-- crosshair (desktop pointer-lock only) -->
     <div id="crosshair"></div>
-
-    <!-- mobile joystick -->
-    <div id="joystick-base" aria-hidden="true">
-      <div id="joystick-knob"></div>
-    </div>
+    <div id="joystick-base" aria-hidden="true"><div id="joystick-knob"></div></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>
