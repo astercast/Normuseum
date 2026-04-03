@@ -56,6 +56,12 @@ var slurpCooldown = 0;
 var SLURP_DISTANCE = 1.6;
 var SLURP_COOLDOWN = 4;
 
+/* ── Caches ────────────────────────────────────────────────────────────────── */
+var imageCache = new Map();
+var metaCache  = new Map();
+var reusableOC = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(GRID, GRID) : null;
+var reusableOCCtx = reusableOC ? reusableOC.getContext("2d", { willReadFrequently: true }) : null;
+
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
 const canvasEl      = $("scene");
@@ -729,13 +735,31 @@ function clearArt() {
   rooms.forEach(function(r) { r.loaded = false; r.loading = false; });
 }
 
-/* ── Lazy load art for a room ─────────────────────────────────────────────── */
+/* ── Frame yield helper ────────────────────────────────────────────────────── */
+function yieldToFrame() {
+  return new Promise(function(resolve) { requestAnimationFrame(resolve); });
+}
+
+/* ── Prefetch (network only, no voxel building) ───────────────────────────── */
+function prefetchRoomImages(ri) {
+  var room = rooms[ri];
+  if (!room || room.loaded || room.loading) return;
+  var tokens = allTokenIds.slice(room.slotOffset, room.slotOffset + room.slotCount);
+  for (var i = 0; i < tokens.length; i++) {
+    var tid = tokens[i];
+    if (!imageCache.has(tid)) fetchImageRGBA(tid).catch(function() {});
+    if (!metaCache.has(tid)) fetchTokenMeta(tid).catch(function() {});
+  }
+}
+
+/* ── Lazy load art for a room (staggered, 1 piece per frame yield) ────────── */
 async function loadRoomArt(ri) {
   var room = rooms[ri];
   if (room.loaded || room.loading || !room.built) return;
   room.loading = true;
   var tokens = allTokenIds.slice(room.slotOffset, room.slotOffset + room.slotCount);
 
+  /* Show placeholders immediately */
   var phs = tokens.map(function(_, j) {
     var slot = room.artSlots[j];
     if (!slot) return null;
@@ -743,28 +767,43 @@ async function loadRoomArt(ri) {
     artGroup.add(ph); return ph;
   });
 
-  var BATCH = 4;
-  for (var bi = 0; bi < tokens.length; bi += BATCH) {
+  /* Fetch all images + meta in parallel (network-bound, no jank) */
+  var NET_BATCH = 6;
+  var fetched = new Array(tokens.length);
+  for (var nb = 0; nb < tokens.length; nb += NET_BATCH) {
     if (!room.loading) return;
-    var batch = tokens.slice(bi, bi + BATCH);
-    var batchStart = bi;
-    await Promise.allSettled(batch.map(async function(tokenId, j) {
-      var idx = batchStart + j;
-      if (!room.loading) return;
-      try {
-        var results = await Promise.all([fetchImageRGBA(tokenId), fetchTokenMeta(tokenId)]);
-        if (!room.loading) return;
-        var slot = room.artSlots[idx];
-        if (!slot) return;
-        var art = buildVoxelArtwork(tokenId, results[0], {
-          type: results[1]?.type || "human", ap: results[1]?.actionPoints || null,
-        }, ri);
-        art.position.copy(slot.pos); art.rotation.y = slot.ry;
-        if (phs[idx]) { artGroup.remove(phs[idx]); dispose(phs[idx]); }
-        artGroup.add(art);
-      } catch (e) {}
+    var slice = tokens.slice(nb, nb + NET_BATCH);
+    var results = await Promise.allSettled(slice.map(function(tid) {
+      return Promise.all([fetchImageRGBA(tid), fetchTokenMeta(tid)]);
     }));
+    for (var ri2 = 0; ri2 < results.length; ri2++) {
+      fetched[nb + ri2] = results[ri2].status === "fulfilled" ? results[ri2].value : null;
+    }
   }
+
+  /* Build voxel meshes one-at-a-time, yielding to the renderer between each */
+  for (var idx = 0; idx < tokens.length; idx++) {
+    if (!room.loading) return;
+    var data = fetched[idx];
+    if (!data) continue;
+    var slot = room.artSlots[idx];
+    if (!slot) continue;
+
+    var art = buildVoxelArtwork(tokens[idx], data[0], {
+      type: data[1]?.type || "human", ap: data[1]?.actionPoints || null,
+    }, ri);
+    art.position.copy(slot.pos); art.rotation.y = slot.ry;
+    if (phs[idx]) { artGroup.remove(phs[idx]); dispose(phs[idx]); }
+    artGroup.add(art);
+
+    /* Show progress */
+    setProgress(idx + 1, tokens.length, "loading room " + (ri + 1) + " art");
+
+    /* Yield every piece so the renderer gets a frame */
+    await yieldToFrame();
+  }
+
+  setProgress(1, 1, "");
   if (room.loading) {
     room.loaded = true;
     room.loading = false;
@@ -811,6 +850,14 @@ function checkRoomLoading() {
     var dist = Math.abs(i - newRoom);
     if (dist <= ROOM_ART_RANGE) {
       loadRoomArt(i);
+    }
+  }
+
+  /* Prefetch images for rooms just beyond art range (network-only, no voxel build) */
+  for (var i = 0; i < rooms.length; i++) {
+    var dist = Math.abs(i - newRoom);
+    if (dist === ROOM_ART_RANGE + 1) {
+      prefetchRoomImages(i);
     }
   }
 
@@ -1065,19 +1112,36 @@ async function fetchOwnedTokenIds(address) {
 }
 
 async function fetchTokenMeta(tokenId) {
-  try { var r = await fetch(NORMIES_API + "/normie/" + tokenId + "/canvas/info", { cache: "no-store" }); return r.ok ? await r.json() : {}; }
-  catch (e) { return {}; }
+  if (metaCache.has(tokenId)) return metaCache.get(tokenId);
+  try {
+    var r = await fetch(NORMIES_API + "/normie/" + tokenId + "/canvas/info", { cache: "no-store" });
+    var data = r.ok ? await r.json() : {};
+    metaCache.set(tokenId, data);
+    return data;
+  } catch (e) { return {}; }
 }
 
 async function fetchImageRGBA(tokenId) {
+  if (imageCache.has(tokenId)) return imageCache.get(tokenId);
   var res = await fetch(NORMIES_API + "/normie/" + tokenId + "/image.png", { cache: "no-store" });
   if (!res.ok) throw new Error("image " + res.status);
   var bmp = await createImageBitmap(await res.blob());
-  var oc = new OffscreenCanvas(GRID, GRID);
-  var ctx = oc.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bmp, 0, 0, GRID, GRID);
-  return ctx.getImageData(0, 0, GRID, GRID).data;
+  var ctx;
+  if (reusableOC) {
+    reusableOCCtx.clearRect(0, 0, GRID, GRID);
+    reusableOCCtx.imageSmoothingEnabled = false;
+    reusableOCCtx.drawImage(bmp, 0, 0, GRID, GRID);
+    ctx = reusableOCCtx;
+  } else {
+    var oc = new OffscreenCanvas(GRID, GRID);
+    ctx = oc.getContext("2d", { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bmp, 0, 0, GRID, GRID);
+  }
+  bmp.close();
+  var data = new Uint8ClampedArray(ctx.getImageData(0, 0, GRID, GRID).data);
+  imageCache.set(tokenId, data);
+  return data;
 }
 
 /* ── ENS resolver ─────────────────────────────────────────────────────────── */
@@ -1512,7 +1576,7 @@ function animate() {
   checkBenchProximity();
   if (inMuseum) {
     roomCheckTimer += dt;
-    if (roomCheckTimer > 0.5) { roomCheckTimer = 0; checkRoomLoading(); }
+    if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
     checkSlurpProximity(dt);
   }
   renderer.render(scene, camera);
