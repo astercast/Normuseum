@@ -3,45 +3,83 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Normuseum</title>
-    <meta
-      name="description"
-      content="Normuseum: a minimalist first-person voxel gallery for your Normies wallet"
-    />
+    <title>Normuseum · Normies Voxel Gallery</title>
+    <meta name="description" content="Walk through your Normies collection in a first-person 3D voxel gallery." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
   </head>
   <body>
-    <div id="app">
-      <div id="hud" class="panel">
-        <div class="brand">normuseum</div>
-        <div class="sub">voxel gallery for normies</div>
 
-        <div class="controls-row">
-          <button id="connectBtn" class="btn">connect wallet</button>
-          <input id="walletInput" type="text" placeholder="or paste 0x wallet" />
-          <button id="loadBtn" class="btn btn-ghost">load museum</button>
+    <!-- Full-screen 3D canvas -->
+    <canvas id="scene"></canvas>
+
+    <!-- ── LANDING OVERLAY (shown before entering) ── -->
+    <div id="overlay">
+
+      <!-- top nav -->
+      <nav id="nav">
+        <span class="nav-brand">normuseum</span>
+        <span class="nav-sub">voxel gallery · normies.art</span>
+        <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
+        <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
+      </nav>
+
+      <!-- centre card -->
+      <div id="landing">
+        <div class="landing-eyebrow">the museum</div>
+        <h1 class="landing-title">normuseum</h1>
+        <p class="landing-desc">walk your normies collection in a first-person voxel gallery.<br>connect or paste a wallet to populate the walls.</p>
+
+        <div class="input-row">
+          <input id="walletInput" type="text" spellcheck="false" autocomplete="off"
+            placeholder="0x wallet address" />
+          <button id="loadBtn" class="btn-primary">enter museum</button>
         </div>
 
-        <div id="status" class="status">Connect a wallet or paste an address.</div>
-        <div id="meta" class="meta"></div>
-      </div>
+        <div class="divider-row"><span>or</span></div>
 
-      <div id="help" class="panel panel-small">
-        <div>click scene to lock cursor</div>
-        <div>move: WASD</div>
-        <div>look: mouse</div>
-        <div>sprint: shift</div>
-        <div>unlock: ESC</div>
-      </div>
+        <button id="connectBtn" class="btn-secondary">connect wallet</button>
 
-      <div id="crosshair"></div>
-      <canvas id="scene"></canvas>
+        <div id="status" class="status-line"></div>
+
+        <div class="landing-footer">
+          <span>10,000 on-chain normies · ethereum mainnet</span>
+        </div>
+      </div>
     </div>
+
+    <!-- ── IN-MUSEUM HUD (shown after entering) ── -->
+    <div id="hud" class="hud-hidden">
+
+      <!-- top bar -->
+      <div id="hud-bar">
+        <span class="hud-brand">normuseum</span>
+        <span id="hud-meta" class="hud-meta"></span>
+        <button id="exitBtn" class="hud-exit">✕ exit</button>
+      </div>
+
+      <!-- controls cheatsheet (bottom-right) -->
+      <div id="hud-controls">
+        <div class="hud-ctrl-row"><kbd>W A S D</kbd><span>move</span></div>
+        <div class="hud-ctrl-row"><kbd>mouse</kbd><span>look</span></div>
+        <div class="hud-ctrl-row"><kbd>shift</kbd><span>sprint</span></div>
+        <div class="hud-ctrl-row"><kbd>esc</kbd><span>unlock / exit</span></div>
+      </div>
+
+      <!-- loading progress bar -->
+      <div id="progress-wrap">
+        <div id="progress-bar"></div>
+        <div id="progress-label"></div>
+      </div>
+
+    </div>
+
+    <!-- crosshair (shows only when pointer is locked) -->
+    <div id="crosshair"></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

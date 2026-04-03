@@ -1,436 +1,676 @@
 import "./style.css";
 import * as THREE from "three";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
+import { RectAreaLightHelper } from "three/examples/jsm/helpers/RectAreaLightHelper.js";
+import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
+
+RectAreaLightUniformsLib.init();
 
 const NORMIES_CONTRACT = "0x9Eb6E2025B64f340691e424b7fe7022fFDE12438";
-const NORMIES_API = "https://api.normies.art";
-const MAX_ARTWORKS = 48;
+const NORMIES_API      = "https://api.normies.art";
+const MAX_ARTWORKS     = 48;
 
-const canvas = document.getElementById("scene");
-const statusEl = document.getElementById("status");
-const metaEl = document.getElementById("meta");
-const connectBtn = document.getElementById("connectBtn");
-const walletInput = document.getElementById("walletInput");
-const loadBtn = document.getElementById("loadBtn");
+// Gallery dimensions
+const ROOM_W  = 14;   // full width
+const ROOM_H  = 4.6;  // ceiling height
+const ROOM_LEN= 52;   // length (Z)
+const WALL_X  = ROOM_W / 2;  // 7
+const SLOT_SPACING = 2.9;    // spacing between artworks along Z
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+// ─── DOM refs ──────────────────────────────────────────────────────────────
+const canvasEl      = document.getElementById("scene");
+const overlayEl     = document.getElementById("overlay");
+const hudEl         = document.getElementById("hud");
+const hudMetaEl     = document.getElementById("hud-meta");
+const connectBtn    = document.getElementById("connectBtn");
+const walletInput   = document.getElementById("walletInput");
+const loadBtn       = document.getElementById("loadBtn");
+const exitBtn       = document.getElementById("exitBtn");
+const statusEl      = document.getElementById("status");
+const progressWrap  = document.getElementById("progress-wrap");
+const progressBar   = document.getElementById("progress-bar");
+const progressLabel = document.getElementById("progress-label");
+
+// ─── Renderer ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: canvasEl, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping      = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
 
+// ─── Scene ─────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#f0efea");
-scene.fog = new THREE.Fog("#f0efea", 14, 40);
+scene.background = new THREE.Color("#e3e5e4");
+scene.fog        = new THREE.FogExp2("#e8eae9", 0.028);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120);
-camera.position.set(0, 1.65, 11.5);
+// ─── Camera ────────────────────────────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 120);
+camera.position.set(0, 1.7, ROOM_LEN / 2 - 2);
 
+// ─── Controls ──────────────────────────────────────────────────────────────
 const controls = new PointerLockControls(camera, renderer.domElement);
 scene.add(controls.getObject());
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0xc9c7c2, 1.2);
-scene.add(hemiLight);
+// ─── Lights ────────────────────────────────────────────────────────────────
+// Soft ambient fill
+const amb = new THREE.AmbientLight(0xfaf9f7, 0.55);
+scene.add(amb);
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-dirLight.position.set(5, 10, 4);
-scene.add(dirLight);
+// Warm directional key
+const sun = new THREE.DirectionalLight(0xfff5e8, 0.4);
+sun.position.set(3, 12, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far  = 80;
+scene.add(sun);
 
-const artGroup = new THREE.Group();
-scene.add(artGroup);
+// Gallery track lighting — RectAreaLights recessed in ceiling rows
+const trackLightColor = 0xfff8f0;
+const trackIntensity  = 6;
+const trackZStart = -(ROOM_LEN / 2 - 4);
+const trackCount  = 10;
+const trackStep   = (ROOM_LEN - 8) / (trackCount - 1);
+for (let i = 0; i < trackCount; i++) {
+  const z = trackZStart + i * trackStep;
+  // Left wall wash
+  const l = new THREE.RectAreaLight(trackLightColor, trackIntensity, 1.4, 0.6);
+  l.position.set(-WALL_X + 1.8, ROOM_H - 0.35, z);
+  l.lookAt(-WALL_X + 0.1, 1.9, z);
+  scene.add(l);
+  // Right wall wash
+  const r = new THREE.RectAreaLight(trackLightColor, trackIntensity, 1.4, 0.6);
+  r.position.set(WALL_X - 1.8, ROOM_H - 0.35, z);
+  r.lookAt(WALL_X - 0.1, 1.9, z);
+  scene.add(r);
+}
 
-function makeRoom() {
+// ─── Gallery Room Geometry ─────────────────────────────────────────────────
+function buildRoom() {
   const room = new THREE.Group();
 
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(18, 36),
-    new THREE.MeshStandardMaterial({ color: "#f9f9f7", roughness: 0.9 })
-  );
+  // Materials
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: "#d0d2d1", roughness: 0.88, metalness: 0.0
+  });
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: "#f8f8f6", roughness: 0.92, metalness: 0.0
+  });
+  const ceilMat = new THREE.MeshStandardMaterial({
+    color: "#fafafa", roughness: 0.96
+  });
+  const moulding = new THREE.MeshStandardMaterial({
+    color: "#f0f0ee", roughness: 0.82
+  });
+  const baseboard = new THREE.MeshStandardMaterial({
+    color: "#e8e9e8", roughness: 0.85
+  });
+
+  // Floor
+  const floorGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_LEN, 1, 1);
+  const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
   room.add(floor);
 
-  const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(18, 36),
-    new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.9 })
-  );
-  ceiling.position.y = 4.1;
+  // Subtle reflection plane (semi-transparent plane just above floor)
+  const reflGeo  = new THREE.PlaneGeometry(ROOM_W, ROOM_LEN);
+  const reflMat  = new THREE.MeshStandardMaterial({
+    color: "#d4d6d5", roughness: 0.1, metalness: 0.35,
+    transparent: true, opacity: 0.18
+  });
+  const refl = new THREE.Mesh(reflGeo, reflMat);
+  refl.rotation.x = -Math.PI / 2;
+  refl.position.y = 0.002;
+  room.add(refl);
+
+  // Ceiling
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_LEN), ceilMat);
   ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.y = ROOM_H;
   room.add(ceiling);
 
-  const wallMat = new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.94 });
+  // Left and right walls
+  const wallGeo = new THREE.PlaneGeometry(ROOM_LEN, ROOM_H);
+  const leftWall = new THREE.Mesh(wallGeo, wallMat);
+  leftWall.rotation.y = Math.PI / 2;
+  leftWall.position.set(-WALL_X, ROOM_H / 2, 0);
+  leftWall.receiveShadow = true;
+  room.add(leftWall);
 
-  const walls = [
-    { size: [18, 4.2, 0.25], pos: [0, 2.1, -18] },
-    { size: [18, 4.2, 0.25], pos: [0, 2.1, 18] },
-    { size: [0.25, 4.2, 36], pos: [-9, 2.1, 0] },
-    { size: [0.25, 4.2, 36], pos: [9, 2.1, 0] }
-  ];
+  const rightWall = new THREE.Mesh(wallGeo, wallMat);
+  rightWall.rotation.y = -Math.PI / 2;
+  rightWall.position.set(WALL_X, ROOM_H / 2, 0);
+  rightWall.receiveShadow = true;
+  room.add(rightWall);
 
-  walls.forEach((w) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...w.size), wallMat);
-    mesh.position.set(...w.pos);
-    room.add(mesh);
+  // Back + front walls (end caps)
+  const capGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_H);
+  const backWall = new THREE.Mesh(capGeo, wallMat);
+  backWall.position.set(0, ROOM_H / 2, -ROOM_LEN / 2);
+  room.add(backWall);
+
+  const frontWall = new THREE.Mesh(capGeo, wallMat);
+  frontWall.rotation.y = Math.PI;
+  frontWall.position.set(0, ROOM_H / 2, ROOM_LEN / 2);
+  room.add(frontWall);
+
+  // Crown moulding (top rail on left/right walls)
+  const mouldGeo = new THREE.BoxGeometry(ROOM_LEN, 0.065, 0.12);
+  [-WALL_X, WALL_X].forEach((x, idx) => {
+    const m = new THREE.Mesh(mouldGeo, moulding);
+    m.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
+    // BoxGeometry along Z — built along X so rotate
+    const mRow = new THREE.Mesh(new THREE.BoxGeometry(ROOM_LEN + 0.3, 0.065, 0.1), moulding);
+    mRow.position.set(0, ROOM_H - 0.032, x === -WALL_X ? -WALL_X + 0.05 : WALL_X - 0.05);
+    room.add(mRow);
   });
 
-  const middleSeparators = [-9, -2, 5, 12].map((z) => {
-    const separator = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 4.2, 1.1),
-      new THREE.MeshStandardMaterial({ color: "#fdfdfd", roughness: 0.95 })
-    );
-    separator.position.set(0, 2.1, z);
-    return separator;
+  // Picture rail (thin horizontal band where artworks sit)
+  const railY = 2.9;
+  const railGeo = new THREE.BoxGeometry(ROOM_LEN + 0.1, 0.04, 0.06);
+  [-WALL_X + 0.03, WALL_X - 0.03].forEach((x) => {
+    const rail = new THREE.Mesh(railGeo, moulding);
+    rail.position.set(0, railY, x);
+    room.add(rail);
   });
 
-  middleSeparators.forEach((s) => room.add(s));
+  // Skirting baseboard
+  const skirtGeo = new THREE.BoxGeometry(ROOM_LEN + 0.1, 0.18, 0.05);
+  [-WALL_X + 0.025, WALL_X - 0.025].forEach((x) => {
+    const s = new THREE.Mesh(skirtGeo, baseboard);
+    s.position.set(0, 0.09, x);
+    room.add(s);
+  });
 
-  for (let i = -7; i <= 7; i += 2) {
-    const light = new THREE.Mesh(
-      new THREE.CircleGeometry(0.26, 18),
-      new THREE.MeshBasicMaterial({ color: "#ecebe7", transparent: true, opacity: 0.8 })
-    );
-    light.position.set(i, 4.05, 0);
-    light.rotation.x = Math.PI / 2;
-    room.add(light);
+  // Ceiling coffers — thin recessed lines
+  const cofferMat = new THREE.MeshStandardMaterial({ color: "#f2f2f0", roughness: 0.95 });
+  for (let zc = -ROOM_LEN / 2 + 4; zc < ROOM_LEN / 2; zc += 5.2) {
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.025, 0.07), cofferMat);
+    bar.position.set(0, ROOM_H - 0.012, zc);
+    room.add(bar);
   }
 
   return room;
 }
 
-scene.add(makeRoom());
+scene.add(buildRoom());
 
+// ─── Wall Slots ────────────────────────────────────────────────────────────
+// Place 24 slots per wall, spanning almost the full gallery length
 const wallSlots = [];
-for (let i = 0; i < 24; i++) {
-  const z = 15 - i * 1.3;
-  wallSlots.push({ position: new THREE.Vector3(-8.72, 1.9, z), rotationY: Math.PI / 2 });
-  wallSlots.push({ position: new THREE.Vector3(8.72, 1.9, z), rotationY: -Math.PI / 2 });
+const slotCount  = MAX_ARTWORKS / 2;  // 24 per side
+const slotZStart = -(ROOM_LEN / 2 - 3.2);
+for (let i = 0; i < slotCount; i++) {
+  const z = slotZStart + i * SLOT_SPACING;
+  const artY = 2.14;  // centre height of artwork
+  wallSlots.push({ pos: new THREE.Vector3(-WALL_X + 0.05, artY, z), ry: Math.PI / 2 });
+  wallSlots.push({ pos: new THREE.Vector3(WALL_X - 0.05, artY, z), ry: -Math.PI / 2 });
 }
 
-function makeLabelTexture(text) {
-  const labelCanvas = document.createElement("canvas");
-  labelCanvas.width = 480;
-  labelCanvas.height = 64;
-  const ctx = labelCanvas.getContext("2d");
-  ctx.fillStyle = "rgba(245, 245, 240, 0.9)";
-  ctx.fillRect(0, 0, labelCanvas.width, labelCanvas.height);
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.32)";
-  ctx.strokeRect(1, 1, labelCanvas.width - 2, labelCanvas.height - 2);
-  ctx.fillStyle = "#111";
-  ctx.font = '700 24px "IBM Plex Mono"';
-  ctx.fillText(text, 16, 41);
+// ─── Artwork Group ─────────────────────────────────────────────────────────
+const artGroup = new THREE.Group();
+scene.add(artGroup);
 
-  const texture = new THREE.CanvasTexture(labelCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.needsUpdate = true;
-  return texture;
+// ─── Shared geometry / material pools (reused across all artworks) ─────────
+const VOXEL_SIZE  = 0.048;       // each voxel cube side length
+const GRID        = 40;          // 40×40 pixel normie grid
+const CELL        = 1.98 / GRID; // artwork canvas size / grid
+const sharedVoxGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
+
+// Frame and backing shared
+const frameMat  = new THREE.MeshStandardMaterial({ color: "#f0f0ee", roughness: 0.7,  metalness: 0.06 });
+const backMat   = new THREE.MeshStandardMaterial({ color: "#fafaf8", roughness: 0.97 });
+const placeholderMat = new THREE.MeshStandardMaterial({ color: "#e6e8e7", roughness: 0.97 });
+
+// ─── Label texture helper ──────────────────────────────────────────────────
+function makeLabelTex(tokenId, type, ap) {
+  const lc = document.createElement("canvas");
+  lc.width = 512; lc.height = 72;
+  const ctx = lc.getContext("2d");
+
+  ctx.fillStyle = "rgba(240,240,238,0.92)";
+  ctx.fillRect(0, 0, 512, 72);
+
+  // Left accent bar
+  ctx.fillStyle = "rgba(72,73,75,0.45)";
+  ctx.fillRect(0, 0, 3, 72);
+
+  ctx.fillStyle = "#48494b";
+  ctx.font = '500 22px "IBM Plex Mono", monospace';
+  ctx.fillText(`normie #${tokenId}`, 14, 32);
+
+  ctx.fillStyle = "#82848a";
+  ctx.font = '400 16px "IBM Plex Mono", monospace';
+  const sub = [type, ap ? `${ap} ap` : null].filter(Boolean).join(" · ");
+  ctx.fillText(sub, 14, 56);
+
+  const tex = new THREE.CanvasTexture(lc);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
 }
 
-async function fetchImageData(tokenId) {
-  const res = await fetch(`${NORMIES_API}/normie/${tokenId}/image.png`, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`image ${res.status}`);
-  }
-
-  const blob = await res.blob();
-  const bitmap = await createImageBitmap(blob);
-
-  const work = document.createElement("canvas");
-  work.width = 40;
-  work.height = 40;
-  const ctx = work.getContext("2d", { willReadFrequently: true });
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(bitmap, 0, 0, 40, 40);
-
-  return ctx.getImageData(0, 0, 40, 40).data;
-}
-
-function buildVoxelArtwork(tokenId, rgbaData) {
+// ─── Build voxel artwork ───────────────────────────────────────────────────
+function buildVoxelArtwork(tokenId, rgbaData, meta = {}) {
   const group = new THREE.Group();
 
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(2.55, 2.55, 0.14),
-    new THREE.MeshStandardMaterial({ color: "#fefefe", roughness: 0.82, metalness: 0.02 })
-  );
-  frame.position.z = 0;
-  group.add(frame);
+  const ART_W = 2.12;
+  const ART_H = 2.12;
 
-  const backing = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.38, 2.38),
-    new THREE.MeshStandardMaterial({ color: "#fcfcfc", roughness: 0.98 })
+  // Outer frame (moulding)
+  const frameOuter = new THREE.Mesh(
+    new THREE.BoxGeometry(ART_W + 0.2, ART_H + 0.2, 0.06),
+    frameMat
   );
-  backing.position.z = 0.071;
+  frameOuter.position.z = -0.06;
+  group.add(frameOuter);
+
+  // Inner backing panel
+  const backing = new THREE.Mesh(
+    new THREE.BoxGeometry(ART_W, ART_H, 0.03),
+    backMat
+  );
+  backing.position.z = -0.03;
   group.add(backing);
 
-  const coords = [];
-  const colors = [];
-  for (let y = 0; y < 40; y++) {
-    for (let x = 0; x < 40; x++) {
-      const i = (y * 40 + x) * 4;
-      const r = rgbaData[i];
-      const g = rgbaData[i + 1];
-      const b = rgbaData[i + 2];
-      const a = rgbaData[i + 3];
+  // Build InstancedMesh from pixel data
+  // Separate dark (foreground) and light pixels for two-pass rendering
+  const darkCoords  = [], darkColors  = [];
+  const lightCoords = [], lightColors = [];
 
-      if (a < 12) continue;
+  for (let py = 0; py < GRID; py++) {
+    for (let px = 0; px < GRID; px++) {
+      const idx = (py * GRID + px) * 4;
+      const r = rgbaData[idx];
+      const g = rgbaData[idx + 1];
+      const b = rgbaData[idx + 2];
+      const a = rgbaData[idx + 3];
+      if (a < 10) continue;
 
-      const darkPixel = r < 38 && g < 38 && b < 38;
-      const lift = darkPixel ? 0.12 : 0.08;
-      const px = (x - 19.5) * 0.055;
-      const py = (19.5 - y) * 0.055;
-      const pz = 0.08 + lift * 0.5;
+      const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+      const isDark = luminance < 45;
 
-      coords.push([px, py, pz, darkPixel ? 0.14 : 0.09]);
-      colors.push([r / 255, g / 255, b / 255]);
+      const wx = (px - GRID / 2 + 0.5) * CELL;
+      const wy = (GRID / 2 - py - 0.5) * CELL;
+
+      if (isDark) {
+        darkCoords.push([wx, wy]);
+        darkColors.push([r / 255, g / 255, b / 255]);
+      } else {
+        lightCoords.push([wx, wy]);
+        lightColors.push([r / 255, g / 255, b / 255]);
+      }
     }
   }
 
-  const geom = new THREE.BoxGeometry(0.05, 0.05, 0.05);
-  const mat = new THREE.MeshStandardMaterial({ roughness: 0.44, metalness: 0.02, vertexColors: true });
-  const instanced = new THREE.InstancedMesh(geom, mat, coords.length);
-
-  const matrix = new THREE.Matrix4();
-  const color = new THREE.Color();
-  const scale = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-
-  for (let i = 0; i < coords.length; i++) {
-    const [x, y, z, depth] = coords[i];
-    scale.set(1, 1, depth / 0.05);
-    matrix.compose(new THREE.Vector3(x, y, z), quat, scale);
-    instanced.setMatrixAt(i, matrix);
-
-    const [r, g, b] = colors[i];
-    color.setRGB(r, g, b);
-    instanced.setColorAt(i, color);
+  // Light pixels — slightly raised flat layer
+  if (lightCoords.length) {
+    const lightGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 1.3);
+    const lightMat  = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0.0, vertexColors: true });
+    const inst       = new THREE.InstancedMesh(lightGeom, lightMat, lightCoords.length);
+    const mtx = new THREE.Matrix4();
+    const col = new THREE.Color();
+    for (let i = 0; i < lightCoords.length; i++) {
+      const [x, y] = lightCoords[i];
+      mtx.setPosition(x, y, VOXEL_SIZE * 0.65);
+      inst.setMatrixAt(i, mtx);
+      col.setRGB(...lightColors[i]);
+      inst.setColorAt(i, col);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.receiveShadow = true;
+    inst.castShadow    = true;
+    group.add(inst);
   }
 
-  instanced.instanceMatrix.needsUpdate = true;
-  if (instanced.instanceColor) instanced.instanceColor.needsUpdate = true;
-  group.add(instanced);
+  // Dark / off-black pixels — deeper extrusion, high-quality shadow
+  if (darkCoords.length) {
+    const darkGeom = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE * 4.5);
+    const darkMat  = new THREE.MeshStandardMaterial({ roughness: 0.38, metalness: 0.08, vertexColors: true });
+    const inst      = new THREE.InstancedMesh(darkGeom, darkMat, darkCoords.length);
+    const mtx = new THREE.Matrix4();
+    const col = new THREE.Color();
+    for (let i = 0; i < darkCoords.length; i++) {
+      const [x, y] = darkCoords[i];
+      mtx.setPosition(x, y, VOXEL_SIZE * 2.25);
+      inst.setMatrixAt(i, mtx);
+      col.setRGB(...darkColors[i]);
+      inst.setColorAt(i, col);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.receiveShadow = true;
+    inst.castShadow    = true;
+    group.add(inst);
+  }
 
-  const labelTexture = makeLabelTexture(`normie #${tokenId}`);
-  const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTexture, transparent: true }));
-  label.position.set(0, -1.56, 0.12);
-  label.scale.set(1.8, 0.24, 1);
+  // Nameplate (label)
+  const labelTex = makeLabelTex(tokenId, meta.type ?? "human", meta.ap ?? null);
+  const labelH   = 0.28;
+  const label    = new THREE.Mesh(
+    new THREE.PlaneGeometry(ART_W + 0.2, labelH),
+    new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
+  );
+  label.position.set(0, -(ART_H / 2 + 0.2 + labelH / 2 + 0.04), 0.01);
   group.add(label);
+
+  // Subtle point light in front of artwork (spotlight effect)
+  const spot = new THREE.PointLight(0xfff5e0, 0.9, 2.6, 2.2);
+  spot.position.set(0, 0.4, 0.75);
+  group.add(spot);
+
+  // Reveal animation state
+  group.userData.revealT = 0;
+  group.userData.revealing = true;
+  group.scale.set(0.001, 0.001, 0.001);
 
   return group;
 }
 
+// ─── Placeholder frame (shown while loading) ────────────────────────────────
+function buildPlaceholder() {
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(2.32, 2.32, 0.04),
+    placeholderMat
+  );
+  g.add(frame);
+  return g;
+}
+
+// ─── Dispose helpers ────────────────────────────────────────────────────────
+function disposeMesh(obj) {
+  if (!obj) return;
+  obj.traverse(child => {
+    if (child.isMesh || child.isInstancedMesh) {
+      child.geometry?.dispose();
+      if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+      else child.material?.dispose();
+    }
+    if (child.isSprite) child.material?.map?.dispose();
+  });
+}
+
 function clearArtwork() {
   while (artGroup.children.length) {
-    const child = artGroup.children.pop();
-    child.traverse((obj) => {
-      if (obj.isMesh) {
-        if (obj.geometry) obj.geometry.dispose();
-        if (obj.material) {
-          if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-          else obj.material.dispose();
-        }
-      }
-      if (obj.isSprite && obj.material?.map) obj.material.map.dispose();
-    });
+    const c = artGroup.children[artGroup.children.length - 1];
+    artGroup.remove(c);
+    disposeMesh(c);
   }
 }
 
+// ─── API calls ──────────────────────────────────────────────────────────────
 async function fetchOwnedTokenIds(address) {
   const ids = [];
   let continuation = null;
-
   do {
     const base = `https://api.reservoir.tools/users/${address}/tokens/v7?collection=${NORMIES_CONTRACT}&limit=200&sortBy=acquiredAt&sortDirection=desc`;
-    const url = continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
-
-    const res = await fetch(url, {
-      headers: { accept: "application/json" },
-      cache: "no-store"
-    });
-
-    if (!res.ok) {
-      throw new Error(`reservoir ${res.status}`);
-    }
-
+    const url  = continuation ? `${base}&continuation=${encodeURIComponent(continuation)}` : base;
+    const res  = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store" });
+    if (!res.ok) throw new Error(`reservoir ${res.status}`);
     const data = await res.json();
-    for (const entry of data.tokens ?? []) {
-      const tokenId = Number.parseInt(entry?.token?.tokenId ?? "", 10);
-      if (!Number.isNaN(tokenId) && tokenId >= 0 && tokenId <= 9999) {
-        ids.push(tokenId);
-      }
+    for (const e of data.tokens ?? []) {
+      const id = Number.parseInt(e?.token?.tokenId ?? "", 10);
+      if (!Number.isNaN(id) && id >= 0 && id <= 9999) ids.push(id);
     }
-
     continuation = data.continuation ?? null;
   } while (continuation);
-
   return [...new Set(ids)];
 }
 
-async function resolveAddress(entry) {
-  const value = entry.trim();
-  if (!value) throw new Error("Wallet input is empty");
-
-  if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {
-    throw new Error("Invalid 0x wallet address");
-  }
-
-  return value;
+async function fetchTokenMeta(tokenId) {
+  try {
+    const res = await fetch(`${NORMIES_API}/normie/${tokenId}/canvas/info`, { cache: "no-store" });
+    if (!res.ok) return {};
+    return await res.json();
+  } catch { return {}; }
 }
 
-async function loadMuseumForAddress(rawAddress) {
-  setBusy(true);
+async function fetchImageRGBA(tokenId) {
+  const res = await fetch(`${NORMIES_API}/normie/${tokenId}/image.png`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`image ${res.status}`);
+  const blob   = await res.blob();
+  const bitmap = await createImageBitmap(blob);
+  const offscreen = new OffscreenCanvas(GRID, GRID);
+  const ctx = offscreen.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bitmap, 0, 0, GRID, GRID);
+  return ctx.getImageData(0, 0, GRID, GRID).data;
+}
+
+// ─── Progress helpers ───────────────────────────────────────────────────────
+function setProgress(done, total, label) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  progressBar.style.setProperty("--pct", `${pct}%`);
+  progressLabel.textContent = label;
+  progressWrap.classList.toggle("visible", done < total);
+}
+
+// ─── Resolve / validate wallet address ──────────────────────────────────────
+function resolveAddress(input) {
+  const v = input.trim();
+  if (!v) throw new Error("Wallet input is empty");
+  if (!/^0x[a-fA-F0-9]{40}$/.test(v)) throw new Error("Invalid 0x wallet address");
+  return v;
+}
+
+// ─── Enter / exit museum ────────────────────────────────────────────────────
+let inMuseum = false;
+
+function enterMuseum() {
+  inMuseum = true;
+  overlayEl.classList.add("hidden");
+  hudEl.classList.remove("hud-hidden");
+}
+
+function exitMuseum() {
+  controls.unlock();
+  inMuseum = false;
+  overlayEl.classList.remove("hidden");
+  hudEl.classList.add("hud-hidden");
   clearArtwork();
+  setStatus("");
+  camera.position.set(0, 1.7, ROOM_LEN / 2 - 2);
+  camera.rotation.set(0, 0, 0);
+}
+
+exitBtn.addEventListener("click", exitMuseum);
+
+// ─── Main load flow ─────────────────────────────────────────────────────────
+async function loadMuseumForAddress(rawAddress) {
+  let address;
   try {
-    const address = await resolveAddress(rawAddress);
-    walletInput.value = address;
-    statusEl.textContent = "Scanning wallet...";
-    metaEl.textContent = "";
-
-    const tokenIds = await fetchOwnedTokenIds(address);
-    if (!tokenIds.length) {
-      statusEl.textContent = "No Normies found in this wallet.";
-      metaEl.textContent = address;
-      return;
-    }
-
-    const shown = tokenIds.slice(0, MAX_ARTWORKS);
-    statusEl.textContent = `Rendering ${shown.length} voxel works...`;
-    metaEl.textContent = `${address} | owns ${tokenIds.length} normies`;
-
-    const results = await Promise.allSettled(
-      shown.map(async (tokenId) => {
-        const rgba = await fetchImageData(tokenId);
-        return { tokenId, rgba };
-      })
-    );
-
-    let mounted = 0;
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status !== "fulfilled") continue;
-      const slot = wallSlots[mounted];
-      if (!slot) break;
-
-      const artwork = buildVoxelArtwork(result.value.tokenId, result.value.rgba);
-      artwork.position.copy(slot.position);
-      artwork.rotation.y = slot.rotationY;
-      artGroup.add(artwork);
-      mounted += 1;
-    }
-
-    statusEl.textContent = mounted
-      ? `Museum ready. Showing ${mounted} voxel works.`
-      : "Unable to render wallet artworks.";
+    address = resolveAddress(rawAddress);
   } catch (err) {
-    statusEl.textContent = `Load failed: ${err.message}`;
-    metaEl.textContent = "";
-  } finally {
-    setBusy(false);
+    setStatus(err.message, true);
+    return;
   }
+
+  setBusy(true);
+  setStatus("scanning wallet\u2026");
+
+  let tokenIds;
+  try {
+    tokenIds = await fetchOwnedTokenIds(address);
+  } catch (err) {
+    setStatus(`wallet lookup failed: ${err.message}`, true);
+    setBusy(false);
+    return;
+  }
+
+  if (!tokenIds.length) {
+    setStatus("no normies found in this wallet.");
+    setBusy(false);
+    return;
+  }
+
+  const shown = tokenIds.slice(0, MAX_ARTWORKS);
+  setStatus(`loading ${shown.length} normies\u2026`);
+
+  // Enter museum before data loads so user sees the gallery
+  clearArtwork();
+  enterMuseum();
+  controls.lock();
+  setBusy(false);
+
+  hudMetaEl.textContent = `${address.slice(0, 8)}\u2026${address.slice(-5)} \u00b7 ${tokenIds.length} normies`;
+  setProgress(0, shown.length, `loading 0 / ${shown.length}`);
+
+  // Place placeholder frames immediately
+  const placeholders = shown.map((_, i) => {
+    const slot = wallSlots[i];
+    const ph   = buildPlaceholder();
+    ph.position.copy(slot.pos);
+    ph.rotation.y = slot.ry;
+    artGroup.add(ph);
+    return ph;
+  });
+
+  // Load artworks progressively
+  let done = 0;
+  await Promise.allSettled(shown.map(async (tokenId, i) => {
+    try {
+      const [rgba, meta] = await Promise.all([
+        fetchImageRGBA(tokenId),
+        fetchTokenMeta(tokenId)
+      ]);
+
+      const slot    = wallSlots[i];
+      const artwork = buildVoxelArtwork(tokenId, rgba, {
+        type: meta?.type ?? "human",
+        ap:   meta?.actionPoints ?? null
+      });
+      artwork.position.copy(slot.pos);
+      artwork.rotation.y = slot.ry;
+
+      // Remove placeholder; add real artwork
+      artGroup.remove(placeholders[i]);
+      disposeMesh(placeholders[i]);
+      artGroup.add(artwork);
+    } catch {/* individual piece failure is silent */}
+
+    done++;
+    setProgress(done, shown.length, `loading ${done} / ${shown.length}`);
+  }));
+
+  setProgress(shown.length, shown.length, "");
+}
+
+// ─── UI helpers ──────────────────────────────────────────────────────────────
+function setStatus(msg, isError = false) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("error", isError);
 }
 
 function setBusy(busy) {
   connectBtn.disabled = busy;
-  loadBtn.disabled = busy;
+  loadBtn.disabled    = busy;
   walletInput.disabled = busy;
 }
 
+// ─── Wallet connect ──────────────────────────────────────────────────────────
 async function connectWallet() {
   if (!window.ethereum) {
-    statusEl.textContent = "No injected wallet found. Paste an address instead.";
+    setStatus("no injected wallet found — paste an address instead.", true);
     return;
   }
-
   try {
+    setBusy(true);
     const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-    if (!accounts?.length) throw new Error("Wallet returned no accounts");
+    if (!accounts?.length) throw new Error("wallet returned no accounts");
+    walletInput.value = accounts[0];
     await loadMuseumForAddress(accounts[0]);
   } catch (err) {
-    statusEl.textContent = `Wallet connection failed: ${err.message}`;
+    setStatus(`wallet connect failed: ${err.message}`, true);
+    setBusy(false);
   }
 }
 
 connectBtn.addEventListener("click", connectWallet);
 loadBtn.addEventListener("click", () => loadMuseumForAddress(walletInput.value));
-walletInput.addEventListener("keydown", (ev) => {
-  if (ev.key === "Enter") {
-    loadMuseumForAddress(walletInput.value);
-  }
-});
+walletInput.addEventListener("keydown", e => { if (e.key === "Enter") loadMuseumForAddress(walletInput.value); });
 
-renderer.domElement.addEventListener("click", () => controls.lock());
-controls.addEventListener("lock", () => document.body.classList.add("locked"));
+// ─── Pointer lock ────────────────────────────────────────────────────────────
+renderer.domElement.addEventListener("click", () => { if (inMuseum) controls.lock(); });
+controls.addEventListener("lock",   () => document.body.classList.add("locked"));
 controls.addEventListener("unlock", () => document.body.classList.remove("locked"));
 
-const moveState = {
-  forward: false,
-  back: false,
-  left: false,
-  right: false,
-  sprint: false
-};
-
-window.addEventListener("keydown", (event) => {
-  if (event.code === "KeyW") moveState.forward = true;
-  if (event.code === "KeyS") moveState.back = true;
-  if (event.code === "KeyA") moveState.left = true;
-  if (event.code === "KeyD") moveState.right = true;
-  if (event.code === "ShiftLeft" || event.code === "ShiftRight") moveState.sprint = true;
+// ─── Keyboard movement ───────────────────────────────────────────────────────
+const keys = { w: false, s: false, a: false, d: false, shift: false };
+window.addEventListener("keydown", e => {
+  if (e.code === "KeyW")    keys.w = true;
+  if (e.code === "KeyS")    keys.s = true;
+  if (e.code === "KeyA")    keys.a = true;
+  if (e.code === "KeyD")    keys.d = true;
+  if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+});
+window.addEventListener("keyup", e => {
+  if (e.code === "KeyW")    keys.w = false;
+  if (e.code === "KeyS")    keys.s = false;
+  if (e.code === "KeyA")    keys.a = false;
+  if (e.code === "KeyD")    keys.d = false;
+  if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
 });
 
-window.addEventListener("keyup", (event) => {
-  if (event.code === "KeyW") moveState.forward = false;
-  if (event.code === "KeyS") moveState.back = false;
-  if (event.code === "KeyA") moveState.left = false;
-  if (event.code === "KeyD") moveState.right = false;
-  if (event.code === "ShiftLeft" || event.code === "ShiftRight") moveState.sprint = false;
-});
-
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
+const vel  = new THREE.Vector3();
+const dir  = new THREE.Vector3();
 const clock = new THREE.Clock();
 
-function updateMovement(delta) {
-  const speed = moveState.sprint ? 5.8 : 3.4;
-  velocity.x = 0;
-  velocity.z = 0;
+function move(delta) {
+  const speed = keys.shift ? 6.5 : 3.2;
+  vel.set(0, 0, 0);
+  dir.z = Number(keys.w) - Number(keys.s);
+  dir.x = Number(keys.d) - Number(keys.a);
+  dir.normalize();
+  if (keys.w || keys.s) vel.z = dir.z * speed * delta;
+  if (keys.a || keys.d) vel.x = dir.x * speed * delta;
+  controls.moveRight(vel.x);
+  controls.moveForward(vel.z);
 
-  direction.z = Number(moveState.forward) - Number(moveState.back);
-  direction.x = Number(moveState.right) - Number(moveState.left);
-  direction.normalize();
-
-  if (moveState.forward || moveState.back) velocity.z = direction.z * speed * delta;
-  if (moveState.left || moveState.right) velocity.x = direction.x * speed * delta;
-
-  controls.moveRight(velocity.x);
-  controls.moveForward(velocity.z);
-
+  // Constrain inside gallery
   const p = controls.getObject().position;
-  p.y = 1.65;
-  p.x = THREE.MathUtils.clamp(p.x, -6.9, 6.9);
-  p.z = THREE.MathUtils.clamp(p.z, -16.8, 16.8);
+  p.y = 1.7;
+  p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
+  p.z = THREE.MathUtils.clamp(p.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+}
 
-  const inSeparatorBand = Math.abs(p.x) < 0.62;
-  const separatorZones = [-9, -2, 5, 12];
-  for (const z of separatorZones) {
-    if (inSeparatorBand && Math.abs(p.z - z) < 1.2) {
-      p.x = p.x >= 0 ? 0.62 : -0.62;
+// ─── Reveal animation ────────────────────────────────────────────────────────
+const REVEAL_SPEED = 4.2;
+function tickReveal(delta) {
+  for (const child of artGroup.children) {
+    if (!child.userData.revealing) continue;
+    child.userData.revealT = Math.min(1, child.userData.revealT + delta * REVEAL_SPEED);
+    const t  = easeOutBack(child.userData.revealT);
+    child.scale.setScalar(t);
+    if (child.userData.revealT >= 1) {
+      child.userData.revealing = false;
+      child.scale.setScalar(1);
     }
   }
 }
-
-function animate() {
-  const delta = Math.min(clock.getDelta(), 0.05);
-  if (controls.isLocked) {
-    updateMovement(delta);
-  }
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
+function easeOutBack(t) {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
+// ─── Render loop ─────────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.05);
+  if (controls.isLocked) move(delta);
+  tickReveal(delta);
+  renderer.render(scene, camera);
+}
 animate();
 
+// ─── Resize ──────────────────────────────────────────────────────────────────
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-statusEl.textContent = "Connect wallet or paste address, then click load museum.";
-metaEl.textContent = "Supports 0x wallet addresses.";
