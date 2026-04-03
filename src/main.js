@@ -49,9 +49,19 @@ scene.fog        = new THREE.FogExp2("#e8eae9", 0.028);
 const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 120);
 camera.position.set(0, 1.7, ROOM_LEN / 2 - 2);
 
-// ─── Controls ──────────────────────────────────────────────────────────────
-const controls = new PointerLockControls(camera, renderer.domElement);
-scene.add(controls.getObject());
+// ─── Touch / mobile detection ──────────────────────────────────────────────────────────────
+const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+if (isTouch) document.body.classList.add('touch-device');
+
+// ─── Controls (desktop only) ─────────────────────────────────────────────────────────
+let controls = null;
+if (!isTouch) {
+  controls = new PointerLockControls(camera, renderer.domElement);
+  scene.add(controls.getObject());
+} else {
+  scene.add(camera);
+  camera.rotation.order = 'YXZ';
+}
 
 // ─── Lights ────────────────────────────────────────────────────────────────
 // Soft ambient fill
@@ -488,46 +498,53 @@ function exitMuseum() {
 exitBtn.addEventListener("click", exitMuseum);
 
 // ─── Main load flow ─────────────────────────────────────────────────────────
-async function loadMuseumForAddress(rawAddress) {
-  let address;
+async function loadMuseumForWallets(rawInput) {
+  const entries = rawInput.split(",").map(s => s.trim()).filter(Boolean);
+  if (!entries.length) { setStatus("paste a wallet address or ENS name.", true); return; }
+
+  setBusy(true);
+  setStatus(`resolving ${entries.length > 1 ? entries.length + " entries" : "address"}…`);
+
+  let addresses;
   try {
-    address = resolveAddress(rawAddress);
+    addresses = await Promise.all(entries.map(resolveAddress));
   } catch (err) {
     setStatus(err.message, true);
+    setBusy(false);
     return;
   }
 
-  setBusy(true);
-  setStatus("scanning wallet\u2026");
+  setStatus(`scanning wallet${addresses.length > 1 ? "s" : ""}…`);
 
-  let tokenIds;
+  let allIds;
   try {
-    tokenIds = await fetchOwnedTokenIds(address);
+    const perWallet = await Promise.all(addresses.map(fetchOwnedTokenIds));
+    allIds = [...new Set(perWallet.flat())];
   } catch (err) {
     setStatus(`wallet lookup failed: ${err.message}`, true);
     setBusy(false);
     return;
   }
 
-  if (!tokenIds.length) {
-    setStatus("no normies found in this wallet.");
+  if (!allIds.length) {
+    setStatus(`no normies found in ${addresses.length > 1 ? "these wallets" : "this wallet"}.`);
     setBusy(false);
     return;
   }
 
-  const shown = tokenIds.slice(0, MAX_ARTWORKS);
-  setStatus(`loading ${shown.length} normies\u2026`);
+  const shown = allIds.slice(0, MAX_ARTWORKS);
+  setStatus(`loading ${shown.length} normies…`);
 
-  // Enter museum before data loads so user sees the gallery
   clearArtwork();
   enterMuseum();
-  controls.lock();
+  if (!isTouch) controls.lock();
   setBusy(false);
 
-  hudMetaEl.textContent = `${address.slice(0, 8)}\u2026${address.slice(-5)} \u00b7 ${tokenIds.length} normies`;
+  hudMetaEl.textContent = addresses.length === 1
+    ? `${addresses[0].slice(0, 8)}…${addresses[0].slice(-5)} · ${allIds.length} normies`
+    : `${addresses.length} wallets · ${allIds.length} normies`;
   setProgress(0, shown.length, `loading 0 / ${shown.length}`);
 
-  // Place placeholder frames immediately
   const placeholders = shown.map((_, i) => {
     const slot = wallSlots[i];
     const ph   = buildPlaceholder();
@@ -537,7 +554,6 @@ async function loadMuseumForAddress(rawAddress) {
     return ph;
   });
 
-  // Load artworks progressively
   let done = 0;
   await Promise.allSettled(shown.map(async (tokenId, i) => {
     try {
@@ -545,7 +561,6 @@ async function loadMuseumForAddress(rawAddress) {
         fetchImageRGBA(tokenId),
         fetchTokenMeta(tokenId)
       ]);
-
       const slot    = wallSlots[i];
       const artwork = buildVoxelArtwork(tokenId, rgba, {
         type: meta?.type ?? "human",
@@ -553,13 +568,10 @@ async function loadMuseumForAddress(rawAddress) {
       });
       artwork.position.copy(slot.pos);
       artwork.rotation.y = slot.ry;
-
-      // Remove placeholder; add real artwork
       artGroup.remove(placeholders[i]);
       disposeMesh(placeholders[i]);
       artGroup.add(artwork);
-    } catch {/* individual piece failure is silent */}
-
+    } catch { /* silent */ }
     done++;
     setProgress(done, shown.length, `loading ${done} / ${shown.length}`);
   }));
@@ -590,48 +602,130 @@ aboutModal.addEventListener("click", e => { if (e.target === aboutModal) aboutMo
 loadBtn.addEventListener("click", () => loadMuseumForWallets(walletInput.value));
 walletInput.addEventListener("keydown", e => { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
 
-// ─── Pointer lock ────────────────────────────────────────────────────────────
-renderer.domElement.addEventListener("click", () => { if (inMuseum) controls.lock(); });
-controls.addEventListener("lock",   () => document.body.classList.add("locked"));
-controls.addEventListener("unlock", () => document.body.classList.remove("locked"));
+// ─── Pointer lock (desktop only) ─────────────────────────────────────────────────────────────────
+if (!isTouch) {
+  renderer.domElement.addEventListener("click", () => { if (inMuseum) controls.lock(); });
+  controls.addEventListener("lock",   () => document.body.classList.add("locked"));
+  controls.addEventListener("unlock", () => document.body.classList.remove("locked"));
+}
 
 // ─── Keyboard movement ───────────────────────────────────────────────────────
 const keys = { w: false, s: false, a: false, d: false, shift: false };
-window.addEventListener("keydown", e => {
-  if (e.code === "KeyW")    keys.w = true;
-  if (e.code === "KeyS")    keys.s = true;
-  if (e.code === "KeyA")    keys.a = true;
-  if (e.code === "KeyD")    keys.d = true;
-  if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
-});
-window.addEventListener("keyup", e => {
-  if (e.code === "KeyW")    keys.w = false;
-  if (e.code === "KeyS")    keys.s = false;
-  if (e.code === "KeyA")    keys.a = false;
-  if (e.code === "KeyD")    keys.d = false;
-  if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
-});
+if (!isTouch) {
+  window.addEventListener("keydown", e => {
+    if (e.code === "KeyW")    keys.w = true;
+    if (e.code === "KeyS")    keys.s = true;
+    if (e.code === "KeyA")    keys.a = true;
+    if (e.code === "KeyD")    keys.d = true;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = true;
+  });
+  window.addEventListener("keyup", e => {
+    if (e.code === "KeyW")    keys.w = false;
+    if (e.code === "KeyS")    keys.s = false;
+    if (e.code === "KeyA")    keys.a = false;
+    if (e.code === "KeyD")    keys.d = false;
+    if (e.code === "ShiftLeft" || e.code === "ShiftRight") keys.shift = false;
+  });
+}
 
 const vel  = new THREE.Vector3();
 const dir  = new THREE.Vector3();
 const clock = new THREE.Clock();
 
-function move(delta) {
-  const speed = keys.shift ? 6.5 : 3.2;
-  vel.set(0, 0, 0);
-  dir.z = Number(keys.w) - Number(keys.s);
-  dir.x = Number(keys.d) - Number(keys.a);
-  dir.normalize();
-  if (keys.w || keys.s) vel.z = dir.z * speed * delta;
-  if (keys.a || keys.d) vel.x = dir.x * speed * delta;
-  controls.moveRight(vel.x);
-  controls.moveForward(vel.z);
+// ─── Touch controls ─────────────────────────────────────────────────────────────────────────────
+const JOY_RADIUS       = 52;
+const LOOK_SENSITIVITY = 0.0038;
+const joystick = { active: false, id: -1, startX: 0, startY: 0, dx: 0, dy: 0 };
+const lookDrag = { active: false, id: -1, lastX: 0, lastY: 0 };
 
-  // Constrain inside gallery
-  const p = controls.getObject().position;
-  p.y = 1.7;
-  p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
-  p.z = THREE.MathUtils.clamp(p.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+function updateJoystickUI(nx, ny) {
+  const knob = document.getElementById("joystick-knob");
+  if (knob) knob.style.transform = `translate(${nx * JOY_RADIUS}px, ${ny * JOY_RADIUS}px)`;
+}
+
+if (isTouch) {
+  const cnv = renderer.domElement;
+
+  cnv.addEventListener("touchstart", e => {
+    if (!inMuseum) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      const isLeft = t.clientX < window.innerWidth * 0.45;
+      if (isLeft && !joystick.active) {
+        Object.assign(joystick, { active: true, id: t.identifier, startX: t.clientX, startY: t.clientY, dx: 0, dy: 0 });
+        document.getElementById("joystick-base").style.opacity = "1";
+        updateJoystickUI(0, 0);
+      } else if (!isLeft && !lookDrag.active) {
+        Object.assign(lookDrag, { active: true, id: t.identifier, lastX: t.clientX, lastY: t.clientY });
+      }
+    }
+  }, { passive: false });
+
+  cnv.addEventListener("touchmove", e => {
+    if (!inMuseum) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.id) {
+        joystick.dx = t.clientX - joystick.startX;
+        joystick.dy = t.clientY - joystick.startY;
+        const r = Math.min(Math.hypot(joystick.dx, joystick.dy), JOY_RADIUS);
+        const a = Math.atan2(joystick.dy, joystick.dx);
+        updateJoystickUI(Math.cos(a) * r / JOY_RADIUS, Math.sin(a) * r / JOY_RADIUS);
+      } else if (t.identifier === lookDrag.id) {
+        mobileYaw   -= (t.clientX - lookDrag.lastX) * LOOK_SENSITIVITY;
+        mobilePitch  = THREE.MathUtils.clamp(
+          mobilePitch - (t.clientY - lookDrag.lastY) * LOOK_SENSITIVITY,
+          -Math.PI / 2.8, Math.PI / 2.8
+        );
+        lookDrag.lastX = t.clientX; lookDrag.lastY = t.clientY;
+      }
+    }
+  }, { passive: false });
+
+  cnv.addEventListener("touchend", e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.id) {
+        Object.assign(joystick, { active: false, id: -1, dx: 0, dy: 0 });
+        document.getElementById("joystick-base").style.opacity = "0.5";
+        updateJoystickUI(0, 0);
+      } else if (t.identifier === lookDrag.id) {
+        lookDrag.active = false; lookDrag.id = -1;
+      }
+    }
+  }, { passive: false });
+}
+
+function move(delta) {
+  if (isTouch) {
+    camera.rotation.y = mobileYaw;
+    camera.rotation.x = mobilePitch;
+    if (joystick.active) {
+      const nx = THREE.MathUtils.clamp(joystick.dx / JOY_RADIUS, -1, 1);
+      const ny = THREE.MathUtils.clamp(joystick.dy / JOY_RADIUS, -1, 1);
+      const speed = 3.5;
+      const fwd   = -ny * speed * delta;
+      const right =  nx * speed * delta;
+      camera.position.x += Math.sin(mobileYaw) * fwd + Math.cos(mobileYaw) * right;
+      camera.position.z += Math.cos(mobileYaw) * fwd - Math.sin(mobileYaw) * right;
+    }
+    camera.position.y = 1.7;
+    camera.position.x = THREE.MathUtils.clamp(camera.position.x, -(WALL_X - 0.6), WALL_X - 0.6);
+    camera.position.z = THREE.MathUtils.clamp(camera.position.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+  } else {
+    const speed = keys.shift ? 6.5 : 3.2;
+    vel.set(0, 0, 0);
+    dir.z = Number(keys.w) - Number(keys.s);
+    dir.x = Number(keys.d) - Number(keys.a);
+    dir.normalize();
+    if (keys.w || keys.s) vel.z = dir.z * speed * delta;
+    if (keys.a || keys.d) vel.x = dir.x * speed * delta;
+    controls.moveRight(vel.x);
+    controls.moveForward(vel.z);
+    const p = controls.getObject().position;
+    p.y = 1.7;
+    p.x = THREE.MathUtils.clamp(p.x, -(WALL_X - 0.6), WALL_X - 0.6);
+    p.z = THREE.MathUtils.clamp(p.z, -(ROOM_LEN / 2 - 0.6), ROOM_LEN / 2 - 0.6);
+  }
 }
 
 // ─── Reveal animation ────────────────────────────────────────────────────────
@@ -657,7 +751,7 @@ function easeOutBack(t) {
 function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.05);
-  if (controls.isLocked) move(delta);
+  if (isTouch ? inMuseum : controls?.isLocked) move(delta);
   tickReveal(delta);
   renderer.render(scene, camera);
 }

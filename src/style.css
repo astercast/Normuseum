@@ -459,6 +459,40 @@ body.locked #crosshair { opacity: 1; }
   text-transform: lowercase;
 }
 
+/* ── Mobile joystick ────────────────────────────────────────────────────────────────── */
+#joystick-base {
+  display: none;
+  position: fixed;
+  bottom: 52px;
+  left: 40px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: rgba(72,73,75,0.12);
+  border: 1.5px solid rgba(72,73,75,0.22);
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  align-items: center;
+  justify-content: center;
+}
+#joystick-knob {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(72,73,75,0.38);
+  border: 1.5px solid rgba(72,73,75,0.45);
+  position: absolute;
+  top: 50%; left: 50%;
+  margin: -22px 0 0 -22px;
+  transition: transform 0.05s linear;
+  will-change: transform;
+}
+body.touch-device #joystick-base { display: flex; }
+body.touch-device #hud-controls   { display: none; }
+body.touch-device #crosshair       { display: none; }
+
 /* ── Animations ──────────────────────────────────────────────────────────── */
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }

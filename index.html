@@ -23,7 +23,6 @@
       <!-- top nav -->
       <nav id="nav">
         <span class="nav-brand">normuseum</span>
-        <span class="nav-sub">voxel gallery · normies.art</span>
         <button class="nav-link" id="aboutBtn">about</button>
         <a class="nav-link" href="https://normiesarchive.xyz" target="_blank" rel="noopener">archive ↗</a>
         <a class="nav-link" href="https://normies.art" target="_blank" rel="noopener">normies.art ↗</a>
@@ -114,8 +113,13 @@
       </div>
     </div>
 
-    <!-- crosshair (shows only when pointer is locked) -->
+    <!-- crosshair (desktop pointer-lock only) -->
     <div id="crosshair"></div>
+
+    <!-- mobile joystick -->
+    <div id="joystick-base" aria-hidden="true">
+      <div id="joystick-knob"></div>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>
