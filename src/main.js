@@ -1734,49 +1734,68 @@ function buildLinkPanel(label, desc) {
 }
 
 /* ── Links floor button + the whole panel cluster ─────────────────────────── */
-function buildLinksSystem(parentGroup, cx, zStart) {
-  /* Wall-mounted button on the left wall, at a comfortable height */
-  var WALL_X = ROOM_W / 2;
-  var bx = cx - WALL_X + 0.018;   /* flush with left wall surface */
-  var bz = zStart - 7.0;           /* mid-room depth, away from pedestals */
-  var by = 1.55;
+function buildLinksSystem(parentGroup, cx, zMid) {
+  /* Podium placed to the right of the centre bench */
+  var podX = cx + 1.62;
+  var podZ = zMid;
 
-  /* Backing plate */
-  var plate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.022, 0.16, 0.16),
-    new THREE.MeshStandardMaterial({ color: "#c8c0b4", roughness: 0.75, metalness: 0.04 })
-  );
-  plate.position.set(bx, by, bz);
-  plate.rotation.y = Math.PI / 2;
-  parentGroup.add(plate);
+  /* ─ Stepped stone base */
+  var baseLow = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.10, 0.60),
+    new THREE.MeshPhysicalMaterial({ color: "#d4cfc4", roughness: 0.22, metalness: 0.06,
+      clearcoat: 0.5, clearcoatRoughness: 0.10 }));
+  baseLow.position.set(podX, 0.05, podZ); parentGroup.add(baseLow);
 
-  /* Button cylinder — protrudes from plate */
-  var btn = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.038, 0.040, 0.030, 24),
-    new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.30, metalness: 0.55 })
-  );
-  btn.rotation.z = Math.PI / 2;  /* lay cylinder pointing outward from wall */
-  btn.position.set(bx + 0.026, by, bz);
+  var baseHigh = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.10, 0.48),
+    new THREE.MeshPhysicalMaterial({ color: "#cac4b8", roughness: 0.20, metalness: 0.08,
+      clearcoat: 0.55, clearcoatRoughness: 0.08 }));
+  baseHigh.position.set(podX, 0.15, podZ); parentGroup.add(baseHigh);
+
+  /* ─ Hexagonal shaft */
+  var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 0.72, 6),
+    new THREE.MeshPhysicalMaterial({ color: "#e0dbd0", roughness: 0.18, metalness: 0.05,
+      clearcoat: 0.65, clearcoatRoughness: 0.08 }));
+  shaft.position.set(podX, 0.56, podZ); parentGroup.add(shaft);
+
+  /* ─ Capital disc */
+  var capital = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.16, 0.05, 32),
+    new THREE.MeshPhysicalMaterial({ color: "#d8d2c6", roughness: 0.15, metalness: 0.10,
+      clearcoat: 0.70, clearcoatRoughness: 0.06 }));
+  capital.position.set(podX, 0.945, podZ); parentGroup.add(capital);
+
+  /* ─ Top plate */
+  var plate = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.03, 32),
+    new THREE.MeshStandardMaterial({ color: "#c8c2b4", roughness: 0.28, metalness: 0.14 }));
+  plate.position.set(podX, 0.985, podZ); parentGroup.add(plate);
+
+  /* ─ Button housing */
+  var housing = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.10, 0.04, 24),
+    new THREE.MeshStandardMaterial({ color: "#3a3830", roughness: 0.18, metalness: 0.78 }));
+  housing.position.set(podX, 1.015, podZ); parentGroup.add(housing);
+
+  /* ─ The button itself */
+  var btn = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.038, 24),
+    new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.30, metalness: 0.55 }));
+  btn.position.set(podX, 1.054, podZ);
   btn.userData.isLinksBtn = true;
   linksBtnMesh = btn;
   parentGroup.add(btn);
 
-  /* "links" label painted on the wall above the button */
+  /* ─ "links" label floating above the podium, facing the entrance (+z) */
   var lc = document.createElement("canvas"); lc.width = 320; lc.height = 72;
   var lctx = lc.getContext("2d");
   lctx.clearRect(0, 0, 320, 72);
-  lctx.fillStyle = "rgba(42,36,32,0.65)";
-  lctx.font = '500 42px "IBM Plex Mono", monospace';
+  lctx.fillStyle = "rgba(42,36,32,0.72)";
+  lctx.font = '500 44px "IBM Plex Mono", monospace';
   lctx.textAlign = "center";
-  lctx.fillText("links", 160, 52);
+  lctx.fillText("links", 160, 54);
   var ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace;
-  var lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.135),
+  var lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 0.145),
     new THREE.MeshBasicMaterial({ map: ltex, transparent: true, alphaTest: 0.01 }));
-  lbl.position.set(bx + 0.01, by + 0.16, bz);
-  lbl.rotation.y = Math.PI / 2;
+  lbl.position.set(podX, 1.32, podZ);
+  /* PlaneGeometry default faces +z (toward entrance) — no rotation needed */
   parentGroup.add(lbl);
 
-  /* 3×3 curved grid — arc centred on the wall button, opening into the room */
+  /* ─ 3×3 curved arc — fans outward from podium toward the entrance */
   var pg = new THREE.Group();
   linkPanelMeshes = [];
   var COLS = 3, ROWS = 3;
@@ -1787,15 +1806,15 @@ function buildLinksSystem(parentGroup, cx, zStart) {
   for (var li = 0; li < LINKS_DATA.length; li++) {
     var col = li % COLS;
     var row = Math.floor(li / COLS);
-    /* Angle sweeps around +X axis (into the room from the left wall) */
+    /* Angle sweeps left–right around the +z axis (toward entrance) */
     var angle = -arcSpread + col * arcSpread;
-    var px = bx + Math.cos(angle) * arcRadius;
-    var pz = bz + Math.sin(angle) * arcRadius;
+    var px = podX + Math.sin(angle) * arcRadius;
+    var pz = podZ + Math.cos(angle) * arcRadius;
     var py = gridY + (1 - row) * rowSpacing;
     var panel = buildLinkPanel(LINKS_DATA[li].label, LINKS_DATA[li].desc);
     panel.position.set(px, py, pz);
-    /* Face each panel back toward the wall button */
-    panel.rotation.y = Math.PI / 2 + angle;
+    /* Face each panel back toward the podium */
+    panel.rotation.y = angle - Math.PI;
     pg.add(panel);
     linkPanelMeshes.push({ mesh: panel.userData.btnMesh, url: LINKS_DATA[li].url });
   }
