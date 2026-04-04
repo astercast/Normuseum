@@ -1667,7 +1667,7 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     var ph = new THREE.Mesh(new THREE.PlaneGeometry(artW, artH),
       new THREE.MeshStandardMaterial({ color: "#2a2820", roughness: 0.9 }));
     ph.rotation.y = -Math.PI / 2;
-    ph.position.set(wallX - 0.04, roomH * 0.42, centerZ);
+    ph.position.set(wallX - 0.04, roomH * 0.58, centerZ);
     parentGroup.add(ph); return;
   }
 
@@ -1701,7 +1701,7 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     var artGroup2 = new THREE.Group();
     artGroup2.add(inst);
     artGroup2.rotation.y = -Math.PI / 2;
-    artGroup2.position.set(wallX - 0.06, roomH * 0.42, centerZ);
+    artGroup2.position.set(wallX - 0.06, roomH * 0.58, centerZ);
     parentGroup.add(artGroup2);
   }
 }
