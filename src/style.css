@@ -479,6 +479,40 @@ body::before {
 :fullscreen .fs-icon--enter,
 :-webkit-full-screen .fs-icon--enter { display: none; }
 
+/* Settings gear panel */
+.settings-wrap { position: relative; }
+.settings-panel {
+  position: absolute;
+  top: 36px; right: 0;
+  min-width: 190px;
+  background: var(--hud-bg);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: all;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 90;
+}
+.settings-panel.visible { opacity: 1; visibility: visible; }
+.settings-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.settings-check-row input[type="checkbox"] {
+  accent-color: var(--text);
+  cursor: pointer;
+}
+
 /* Controls help panel (hidden by default, toggled by ? button) */
 #helpPanel {
   position: absolute;
@@ -571,6 +605,7 @@ kbd {
 #crosshair::before { left: 7px; top: 0; width: 2px; height: 16px; }
 #crosshair::after  { top: 7px; left: 0; width: 16px; height: 2px; }
 body.locked #crosshair { opacity: 1; }
+body.no-crosshair #crosshair { opacity: 0 !important; }
 
 /* ── Interaction hint ────────────────────────────────────────────────────── */
 .interaction-hint {

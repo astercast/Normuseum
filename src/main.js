@@ -40,6 +40,17 @@ var explodeActive = false;
 var explodeParticles = [];  /* { mesh, vel, life } */
 var explodeResetTimer = 0;
 
+/* ── Secret door button + hidden room ────────────────────────────────────── */
+var doorBtnMesh = null;
+var doorBtnHovered = false;
+var doorPanel = null;        /* the sliding wall panel mesh */
+var doorPanelOrigY = null;   /* original Y of the door panel */
+var doorOpen = false;
+var doorAnimating = false;
+var doorAnim = 0;            /* 0 = closed, 1 = open */
+var hiddenRoomGroup = null;
+var hiddenRoomWalkZone = null;  /* { minX, maxX, minZ, maxZ } — added when door opens */
+
 /* ── Hint auto-dismiss ────────────────────────────────────────────────────── */
 var hintDismissTimer = 0;
 var HINT_PERSIST = 4.0;  /* seconds before hint fades if still showing */
@@ -87,6 +98,16 @@ var dragOffset = new THREE.Vector3(); /* offset from camera ray to art pivot */
 var isDragging = false;
 var dragVelocity = new THREE.Vector3();
 var droppedArts = [];        /* { group, velocity, onGround } */
+
+/* ── Time scale + arms ────────────────────────────────────────────────────── */
+var timeScale = 1.0;
+var showArms = true;
+var showCrosshair = true;
+var walkSwing = 0;
+var grabAnim = 0;
+var armsGroup = new THREE.Group();
+var armRGroup = new THREE.Group();
+var armLGroup = new THREE.Group();
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -173,6 +194,23 @@ if (!isTouch) {
   scene.add(camera);
   camera.rotation.order = "YXZ";
 }
+
+/* ── Build voxel arms attached to camera ─────────────────────────────────── */
+(function buildArms() {
+  var sleeveMat = new THREE.MeshStandardMaterial({ color: "#2a2520", roughness: 0.8 });
+  var handMat   = new THREE.MeshStandardMaterial({ color: "#c4956a", roughness: 0.55 });
+  function makeArm(g) {
+    var sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.07, 0.20), sleeveMat);
+    sleeve.position.set(0, 0, -0.04); g.add(sleeve);
+    var hand = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.056, 0.085), handMat);
+    hand.position.set(0, -0.004, -0.155); g.add(hand);
+  }
+  makeArm(armRGroup); makeArm(armLGroup);
+  armRGroup.position.set( 0.24, -0.30, -0.34);
+  armLGroup.position.set(-0.24, -0.30, -0.34);
+  armsGroup.add(armRGroup); armsGroup.add(armLGroup);
+  camera.add(armsGroup);
+})();
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
 scene.add(new THREE.AmbientLight(0xfff2e8, 0.26));
@@ -559,12 +597,25 @@ function buildRoom(ri) {
   /* ── Secret explode button — room 0 only, in a corner ── */
   if (ri === 0) {
     var sBtn = buildSecretButton();
-    /* Place in back-left corner, protruding slightly from wall */
+    /* Place on left wall near entrance — slightly warm-gray tint visible against wall */
     var sbx = cx - WALL_X + 0.018, sbz = room.zStart - 1.2;
     sBtn.position.set(sbx, 1.4, sbz);
     sBtn.rotation.y = -Math.PI / 2;  /* faces into room */
     g.add(sBtn);
     secretBtnMesh = sBtn.userData.btnMesh;
+
+    /* ── Secret door button — right wall, mid-room ── */
+    var dBtn = buildDoorButton();
+    /* z is partway down the right wall, not overlapping art slots */
+    var dbz = room.zStart - room.roomLen * 0.68;
+    var dbx = cx + WALL_X - 0.018;
+    dBtn.position.set(dbx, 1.55, dbz);
+    dBtn.rotation.y = Math.PI / 2;  /* faces into room (left) */
+    g.add(dBtn);
+    doorBtnMesh = dBtn.userData.btnMesh;
+
+    /* ── Hidden alcove room — extends off the right wall ── */
+    buildHiddenRoom(g, cx + WALL_X, dbz, ROOM_H);
   }
 
   galleryGroup.add(g);
@@ -618,8 +669,13 @@ function unloadRoom(ri) {
   if (podiumBtnMesh && podiumBtnMesh.userData && podiumBtnMesh.userData.roomIdx === ri) {
     podiumBtnMesh = null;
   }
-  /* Clear secretBtnMesh if room 0 was unloaded */
-  if (ri === 0) secretBtnMesh = null;
+  /* Clear secretBtnMesh + door refs if room 0 was unloaded */
+  if (ri === 0) {
+    secretBtnMesh = null;
+    doorBtnMesh = null; doorPanel = null; doorPanelOrigY = null;
+    doorOpen = false; doorAnimating = false; doorAnim = 0;
+    hiddenRoomGroup = null;
+  }
 
   room.built = false;
   room.artSlots = [];
@@ -781,6 +837,9 @@ function buildMuseum(totalCount) {
   explodeActive = false; explodeResetTimer = 0;
   explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
   explodeParticles = [];
+  doorBtnMesh = null; doorPanel = null; doorPanelOrigY = null;
+  doorOpen = false; doorAnimating = false; doorAnim = 0;
+  hiddenRoomGroup = null; hiddenRoomWalkZone = null;
   planLayout(totalCount);
 
   /* Only build rooms 0 and 1 upfront — the rest are built lazily */
@@ -1234,6 +1293,7 @@ async function loadRoomArt(ri) {
       customized: !!data[1]?.customized,
     }, ri);
     art.position.copy(slot.pos); art.rotation.y = slot.ry;
+    art.userData.wallSlot = { pos: slot.pos.clone(), ry: slot.ry };
     if (phs[idx]) { artGroup.remove(phs[idx]); dispose(phs[idx]); }
     artGroup.add(art);
 
@@ -1395,26 +1455,221 @@ function buildPodium(ri) {
   return group;
 }
 
-/* ── Secret explode button — protruding white button that blends with wall ── */
+/* ── Secret explode button — slightly warm-gray so it's subtly findable ──── */
 function buildSecretButton() {
   var group = new THREE.Group();
-  /* Subtle wall plate almost same color as wall — barely visible */
+  /* Plate — warm gray, just noticeable against wall */
   var plate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.08, 0.08, 0.012),
-    new THREE.MeshStandardMaterial({ color: "#eee8de", roughness: 0.88, metalness: 0.0 })
+    new THREE.BoxGeometry(0.09, 0.09, 0.014),
+    new THREE.MeshStandardMaterial({ color: "#c8c0b4", roughness: 0.75, metalness: 0.04 })
   );
-  plate.position.z = 0.006; group.add(plate);
-  /* The button — protrudes slightly, slightly off-white */
+  plate.position.z = 0.007; group.add(plate);
+  /* Button — protrudes, slightly lighter than plate */
   var btn = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.026, 0.028, 0.018, 20),
-    new THREE.MeshStandardMaterial({ color: "#f2ede4", roughness: 0.6, metalness: 0.02 })
+    new THREE.CylinderGeometry(0.028, 0.030, 0.020, 20),
+    new THREE.MeshStandardMaterial({ color: "#d8d0c6", roughness: 0.55, metalness: 0.05 })
   );
-  btn.rotation.x = Math.PI / 2;  /* cylinder axis pointing out from wall */
-  btn.position.z = 0.018;
+  btn.rotation.x = Math.PI / 2;
+  btn.position.z = 0.021;
   btn.userData.isSecretBtn = true;
   group.add(btn);
   group.userData.btnMesh = btn;
   return group;
+}
+
+/* ── Secret door button — warm taupe, visible but blends in ─────────────── */
+function buildDoorButton() {
+  var group = new THREE.Group();
+  /* Square backing plate — slightly darker warm tone */
+  var plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.10, 0.10, 0.015),
+    new THREE.MeshStandardMaterial({ color: "#b8b0a4", roughness: 0.70, metalness: 0.06 })
+  );
+  plate.position.z = 0.008; group.add(plate);
+  /* Round button — protrudes, warm off-white */
+  var btn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.030, 0.032, 0.022, 20),
+    new THREE.MeshStandardMaterial({ color: "#cec6ba", roughness: 0.50, metalness: 0.06 })
+  );
+  btn.rotation.x = Math.PI / 2;
+  btn.position.z = 0.024;
+  btn.userData.isDoorBtn = true;
+  group.add(btn);
+  group.userData.btnMesh = btn;
+  return group;
+}
+
+/* ── Hidden alcove room — built once, always exists, door slides to reveal ─ */
+var ALCOVE_W = 6.0;   /* extends rightward from main room wall */
+var ALCOVE_L = 7.0;   /* along Z */
+var ALCOVE_H = ROOM_H;
+
+function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
+  /* The alcove opens to the RIGHT of the main room (positive X direction).
+     wallX is the X of the right wall. Alcove extends from wallX outward. */
+  var aox = wallX + ALCOVE_W / 2;   /* alcove center X */
+  var aoz = doorZ;                    /* alcove center Z aligned with door button */
+
+  var hg = new THREE.Group();
+  hiddenRoomGroup = hg;
+
+  /* Floor */
+  var floor = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_W, ALCOVE_L), floorMat);
+  floor.rotation.x = -Math.PI / 2; floor.position.set(aox, 0.001, aoz); hg.add(floor);
+
+  /* Ceiling */
+  var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_W, ALCOVE_L), ceilMat);
+  ceil.rotation.x = Math.PI / 2; ceil.position.set(aox, ALCOVE_H, aoz); hg.add(ceil);
+
+  /* Back wall (far right) */
+  var backWall = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_L, ALCOVE_H),
+    new THREE.MeshStandardMaterial({ color: "#1a1814", roughness: 0.92 }));  /* dark feature wall */
+  backWall.rotation.y = -Math.PI / 2;
+  backWall.position.set(wallX + ALCOVE_W, ALCOVE_H / 2, aoz); hg.add(backWall);
+
+  /* North side wall */
+  var northWall = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_W, ALCOVE_H), wallMat);
+  northWall.position.set(aox, ALCOVE_H / 2, aoz - ALCOVE_L / 2); hg.add(northWall);
+
+  /* South side wall */
+  var southWall = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_W, ALCOVE_H), wallMat);
+  southWall.rotation.y = Math.PI;
+  southWall.position.set(aox, ALCOVE_H / 2, aoz + ALCOVE_L / 2); hg.add(southWall);
+
+  /* Inner face of main room right wall (the opening — just two side pillars) */
+  var pillarGeo = new THREE.BoxGeometry(0.18, ALCOVE_H, 0.18);
+  [[aoz - ALCOVE_L / 2], [aoz + ALCOVE_L / 2]].forEach(function(pz) {
+    var p = new THREE.Mesh(pillarGeo, archMat); p.position.set(wallX + 0.09, ALCOVE_H / 2, pz[0]); hg.add(p);
+  });
+
+  /* Warm spot light inside alcove */
+  var alcoveLight = new THREE.SpotLight(0xfff0e0, 4.5, 9, Math.PI / 5, 0.5, 1.2);
+  alcoveLight.position.set(wallX + ALCOVE_W * 0.8, ALCOVE_H - 0.2, aoz);
+  alcoveLight.target.position.set(wallX + ALCOVE_W * 0.85, 3.0, aoz);
+  hg.add(alcoveLight); hg.add(alcoveLight.target);
+
+  /* ── Normie #9098 — large voxel art on the dark back wall ── */
+  buildHiddenArt(hg, 9098, wallX + ALCOVE_W - 0.08, aoz, ALCOVE_H);
+
+  /* ── Quote text plaque below the art ── */
+  buildQuotePlaque(hg, wallX + ALCOVE_W - 0.08, aoz, ALCOVE_H);
+
+  /* The door panel — a section of the main room right wall, same material.
+     It slides UP to open. Width = ALCOVE_L, height = ALCOVE_H */
+  var panelGeo = new THREE.BoxGeometry(0.12, ALCOVE_H, ALCOVE_L);
+  var panel = new THREE.Mesh(panelGeo, wallMat.clone());
+  doorPanelOrigY = ALCOVE_H / 2;
+  panel.position.set(wallX - 0.06, doorPanelOrigY, aoz);
+  doorPanel = panel;
+  hg.add(panel);
+
+  /* Start hidden — the alcove geometry is always in scene but we hide the group */
+  /* Only the door panel is visible (it IS the wall). The rest is behind it. */
+  hg.visible = false;  /* whole group invisible until door opens */
+
+  /* Re-show only the door panel (it's part of the wall) */
+  panel.visible = true;  /* will be detached visually — panel slides as part of hg */
+  /* Actually we need the panel visible always as part of the wall. Add to parentGroup separately */
+  parentGroup.add(panel);   /* panel lives in gallery group always */
+  parentGroup.add(hg);      /* hidden room also in gallery group, starts hidden */
+  hiddenRoomGroup = hg;
+
+  /* Store door zone info for walk zone activation */
+  hiddenRoomWalkZone = {
+    minX: wallX, maxX: wallX + ALCOVE_W - 0.3,
+    minZ: aoz - ALCOVE_L / 2 + 0.3, maxZ: aoz + ALCOVE_L / 2 - 0.3
+  };
+}
+
+async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
+  /* Show a large placeholder first */
+  var ART_SCALE = 1.6;
+  var artW = ART_W * ART_SCALE, artH = ART_H * ART_SCALE;
+
+  /* Try to load normie #9098 from the API */
+  var rgbaData = null;
+  try { rgbaData = await fetchImageRGBA(tokenId); } catch (e) {}
+  if (!rgbaData) {
+    /* Fallback: dark placeholder */
+    var ph = new THREE.Mesh(new THREE.PlaneGeometry(artW, artH),
+      new THREE.MeshStandardMaterial({ color: "#2a2820", roughness: 0.9 }));
+    ph.rotation.y = -Math.PI / 2;
+    ph.position.set(wallX - 0.04, roomH * 0.42, centerZ);
+    parentGroup.add(ph); return;
+  }
+
+  /* Build large voxel mesh */
+  var BG_LUM = 180, voxels = [];
+  for (var py = 0; py < GRID; py++) {
+    for (var px2 = 0; px2 < GRID; px2++) {
+      var idx = (py * GRID + px2) * 4;
+      var rv = rgbaData[idx], gv = rgbaData[idx+1], bv = rgbaData[idx+2], av = rgbaData[idx+3];
+      if (av < 10) continue;
+      var lum = 0.299*rv + 0.587*gv + 0.114*bv;
+      if (lum > BG_LUM) continue;
+      voxels.push({ x:(px2-GRID/2+0.5)*CELL*ART_SCALE, y:(GRID/2-py-0.5)*CELL*ART_SCALE,
+        r:rv/255, g:gv/255, b:bv/255, depth:1.5+(1-lum/BG_LUM)*4.5 });
+    }
+  }
+  if (voxels.length) {
+    var mat = new THREE.MeshStandardMaterial({ roughness:0.4, metalness:0.06, vertexColors:true });
+    var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
+    var m4 = new THREE.Matrix4(), col = new THREE.Color();
+    var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
+    for (var vi = 0; vi < voxels.length; vi++) {
+      var v = voxels[vi];
+      posV.set(v.x, v.y, VOXEL_SIZE * v.depth / 2);
+      scaleV.set(ART_SCALE, ART_SCALE, v.depth);
+      m4.compose(posV, quat, scaleV);
+      inst.setMatrixAt(vi, m4);
+      col.setRGB(v.r, v.g, v.b);
+      inst.setColorAt(vi, col);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    inst.castShadow = true;
+    /* Orient facing left (into the alcove, away from the back wall) */
+    var artGroup2 = new THREE.Group();
+    artGroup2.add(inst);
+    artGroup2.rotation.y = -Math.PI / 2;
+    artGroup2.position.set(wallX - 0.06, roomH * 0.42, centerZ);
+    parentGroup.add(artGroup2);
+  }
+}
+
+function buildQuotePlaque(parentGroup, wallX, centerZ, roomH) {
+  /* Canvas with the quote */
+  var c = document.createElement("canvas"); c.width = 800; c.height = 200;
+  var ctx = c.getContext("2d");
+  /* Dark background */
+  ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 800, 200);
+  /* Subtle gold top rule */
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 20, 740, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 178, 740, 2);
+  /* Quote text */
+  ctx.fillStyle = "#d8cdb0";
+  ctx.font = 'italic 400 36px Georgia, serif';
+  ctx.textAlign = "center";
+  ctx.fillText("\u201cWhat is art? What is an agent?\u201d", 400, 92);
+  /* Normie ID below */
+  ctx.fillStyle = "#7a6e56";
+  ctx.font = '500 22px "IBM Plex Mono", monospace';
+  ctx.fillText("normie #9098", 400, 148);
+  var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+
+  var plaqueGroup = new THREE.Group();
+  /* Backing */
+  var backing = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.6, 2.2),
+    new THREE.MeshStandardMaterial({ color: "#0e0c0a", roughness: 0.5 }));
+  plaqueGroup.add(backing);
+  /* Text plane */
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.56),
+    new THREE.MeshBasicMaterial({ map: tex }));
+  plane.rotation.y = -Math.PI / 2;
+  plane.position.x = -0.012;
+  plaqueGroup.add(plane);
+  plaqueGroup.position.set(wallX - 0.02, roomH * 0.18, centerZ);
+  parentGroup.add(plaqueGroup);
 }
 
 /* ── Fruit pedestals — apple and/or orange on top of decorative columns ──── */
@@ -1483,10 +1738,10 @@ function buildOrange() {
   );
   body.scale.set(1, 0.94, 1);
   body.position.y = 0.115; g.add(body);
-  /* Navel dimple hint */
-  var navel = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6),
-    new THREE.MeshStandardMaterial({ color: "#b85010", roughness: 0.8 }));
-  navel.position.y = 0.003; g.add(navel);
+  /* Navel dimple — tiny dark disc at top near stem */
+  var navel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.006, 8),
+    new THREE.MeshStandardMaterial({ color: "#7a4010", roughness: 0.9 }));
+  navel.position.y = 0.222; g.add(navel);
   /* Stem */
   var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.005, 0.04, 6),
     new THREE.MeshStandardMaterial({ color: "#3a2c10", roughness: 0.7 }));
@@ -1537,6 +1792,83 @@ function checkSecretButtonInteraction() {
   var hit = hits.length > 0 && hits[0].distance < 2.5;
   secretBtnHovered = hit;
   /* No visible hint — intentionally secret */
+}
+
+/* ── Check if aiming at the secret door button ────────────────────────────── */
+function checkDoorButtonInteraction() {
+  if (!inMuseum || !doorBtnMesh) {
+    if (doorBtnHovered) { doorBtnHovered = false; }
+    return;
+  }
+  raycaster.setFromCamera(screenCenter, camera);
+  var hits = raycaster.intersectObject(doorBtnMesh, true);
+  var hit = hits.length > 0 && hits[0].distance < 2.5;
+  doorBtnHovered = hit;
+}
+
+/* ── Door open/close toggle ───────────────────────────────────────────────── */
+function pressDoorButton() {
+  if (doorAnimating || !doorPanel) return;
+  doorOpen = !doorOpen;
+  doorAnimating = true;
+  /* Depress button briefly */
+  if (doorBtnMesh) doorBtnMesh.position.z -= 0.012;
+  setTimeout(function() { if (doorBtnMesh) doorBtnMesh.position.z += 0.012; }, 140);
+  playDoorSound(doorOpen);
+  /* Show hidden room geometry while animating open */
+  if (doorOpen && hiddenRoomGroup) hiddenRoomGroup.visible = true;
+  /* Add/remove walk zone when toggled open/closed */
+  if (doorOpen && hiddenRoomWalkZone) {
+    walkZones.push(hiddenRoomWalkZone);
+  }
+}
+
+function tickDoorAnim(dt) {
+  if (!doorAnimating || !doorPanel) return;
+  var speed = 1.6;  /* panel heights per second */
+  if (doorOpen) {
+    doorAnim = Math.min(1, doorAnim + dt * speed);
+  } else {
+    doorAnim = Math.max(0, doorAnim - dt * speed);
+  }
+  /* Slide the panel UP when opening */
+  var slideY = doorPanelOrigY + doorAnim * (ALCOVE_H + 0.2);
+  doorPanel.position.y = slideY;
+  if (doorAnim >= 1 || doorAnim <= 0) {
+    doorAnimating = false;
+    /* When fully closed, hide the room geometry again */
+    if (!doorOpen && hiddenRoomGroup) {
+      hiddenRoomGroup.visible = false;
+      /* Remove walk zone */
+      var idx = walkZones.indexOf(hiddenRoomWalkZone);
+      if (idx >= 0) walkZones.splice(idx, 1);
+    }
+  }
+}
+
+function playDoorSound(opening) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  /* Low mechanical rumble */
+  var osc = audioCtx.createOscillator();
+  var gain = audioCtx.createGain();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(opening ? 55 : 80, now);
+  osc.frequency.linearRampToValueAtTime(opening ? 80 : 40, now + 0.5);
+  gain.gain.setValueAtTime(0.07, now);
+  gain.gain.linearRampToValueAtTime(0, now + 0.55);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 0.6);
+  /* Higher click */
+  var osc2 = audioCtx.createOscillator();
+  var gain2 = audioCtx.createGain();
+  osc2.type = "square";
+  osc2.frequency.setValueAtTime(320, now);
+  gain2.gain.setValueAtTime(0.04, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  osc2.connect(gain2); gain2.connect(audioCtx.destination);
+  osc2.start(now); osc2.stop(now + 0.1);
 }
 
 /* ── Check if aiming at a history button ──────────────────────────────────── */
@@ -1740,6 +2072,7 @@ function playExplodeSound() {
 function tryInteract() {
   if (isSitting) { standUp(); return; }
   if (secretBtnHovered) { pressSecretButton(); return; }
+  if (doorBtnHovered) { pressDoorButton(); return; }
   if (historyBtnHovered && hoveredHistoryGroup) {
     var tid = hoveredHistoryGroup.userData.tokenId;
     toggleHistoryAnim(hoveredHistoryGroup, tid);
@@ -1795,6 +2128,50 @@ function playButtonClick() {
   osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(150, now + 0.04);
   gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
   osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.06);
+}
+
+function playJumpSound() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator(); var gain = audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(440, now + 0.09);
+  gain.gain.setValueAtTime(sfxVolume * 0.13, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+  osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.17);
+}
+
+function playGrabSound() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator(); var gain = audioCtx.createGain();
+  osc.type = "square";
+  osc.frequency.setValueAtTime(400, now); osc.frequency.exponentialRampToValueAtTime(110, now + 0.06);
+  gain.gain.setValueAtTime(sfxVolume * 0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.08);
+}
+
+function playDropFloorSound() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator(); var gain = audioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(130, now); osc.frequency.exponentialRampToValueAtTime(48, now + 0.13);
+  gain.gain.setValueAtTime(sfxVolume * 0.18, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.15);
+}
+
+function playWallSnapSound() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  var osc = audioCtx.createOscillator(); var gain = audioCtx.createGain();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(820, now); osc.frequency.exponentialRampToValueAtTime(380, now + 0.06);
+  gain.gain.setValueAtTime(sfxVolume * 0.11, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+  osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.08);
 }
 
 /* ── API calls ────────────────────────────────────────────────────────────── */
@@ -1983,6 +2360,10 @@ function exitMuseum() {
   explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
   explodeParticles = []; explodeActive = false; explodeResetTimer = 0;
   secretBtnMesh = null; secretBtnHovered = false;
+  /* Reset door state */
+  doorBtnMesh = null; doorPanel = null; doorPanelOrigY = null;
+  doorOpen = false; doorAnimating = false; doorAnim = 0;
+  hiddenRoomGroup = null; hiddenRoomWalkZone = null;
   overlayEl.classList.remove("hidden");
   hudEl.classList.add("hud-hidden");
   clearArt(); setStatus("");
@@ -2227,7 +2608,45 @@ document.addEventListener("click", function(e) {
   if (audioPanelEl && audioPanelEl.classList.contains("visible")) {
     if (!audioPanelEl.contains(e.target) && e.target !== musicBtn) audioPanelEl.classList.remove("visible");
   }
+  var settingsPanelEl = $("settingsPanel");
+  if (settingsPanelEl && settingsPanelEl.classList.contains("visible")) {
+    var settBtn = $("settingsBtn");
+    if (!settingsPanelEl.contains(e.target) && e.target !== settBtn) settingsPanelEl.classList.remove("visible");
+  }
 });
+
+/* ── Settings panel wiring ────────────────────────────────────────────────── */
+(function wireSettings() {
+  var settBtn = $("settingsBtn");
+  var settPanel = $("settingsPanel");
+  if (settBtn && settPanel) {
+    settBtn.addEventListener("click", function(e) {
+      settPanel.classList.toggle("visible"); e.stopPropagation();
+    });
+  }
+  var resetBtn = $("resetGalleryBtn");
+  if (resetBtn) resetBtn.addEventListener("click", function() {
+    resetGallery();
+    if (settPanel) settPanel.classList.remove("visible");
+  });
+  var tss = $("timeSpeedSlider");
+  if (tss) tss.addEventListener("input", function() { timeScale = parseFloat(this.value); });
+  var armsEl = $("armsToggle");
+  if (armsEl) {
+    armsEl.checked = showArms;
+    armsEl.addEventListener("change", function() {
+      showArms = this.checked; armsGroup.visible = showArms && !isSitting;
+    });
+  }
+  var xhEl = $("crosshairToggle");
+  if (xhEl) {
+    xhEl.checked = showCrosshair;
+    xhEl.addEventListener("change", function() {
+      showCrosshair = this.checked;
+      document.body.classList.toggle("no-crosshair", !showCrosshair);
+    });
+  }
+})();
 
 /* ── Slurp sound near art ─────────────────────────────────────────────────── */
 function initSlurp() { if (slurpAudio) return; slurpAudio = new Audio("./slurp.mp3"); slurpAudio.volume = sfxVolume * 0.25; }
@@ -2259,41 +2678,59 @@ if (!isTouch && controls) {
   controls.addEventListener("lock", function()   { document.body.classList.add("locked"); });
   controls.addEventListener("unlock", function() { document.body.classList.remove("locked"); });
 
-  /* Right mouse button — grab / drop dragged normie */
+  /* Right mouse button — toggle grab/drop with single mousedown; also picks up from floor */
   renderer.domElement.addEventListener("mousedown", function(e) {
     if (!inMuseum || !controls.isLocked || e.button !== 2) return;
     e.preventDefault();
     if (isDragging) { dropDraggedArt(); return; }
-    /* Raycast against art group for a voxel/flat mesh */
-    var artRay = new THREE.Raycaster(); artRay.far = 4.0;
+
+    var artRay = new THREE.Raycaster(); artRay.far = 4.5;
     artRay.setFromCamera(screenCenter, camera);
+
+    /* Build candidate list from artGroup children AND droppedArts in scene */
     var candidates = [];
-    artGroup.traverse(function(c) { if (c.isMesh && c !== artGroup) candidates.push(c); });
+    var candidateRoots = new Map();
+    artGroup.traverse(function(c) {
+      if (c.isMesh && c !== artGroup) {
+        candidates.push(c);
+        var root = c;
+        while (root.parent && root.parent !== artGroup) root = root.parent;
+        candidateRoots.set(c, root);
+      }
+    });
+    for (var dri = 0; dri < droppedArts.length; dri++) {
+      (function(da) {
+        da.group.traverse(function(c) {
+          if (c.isMesh) { candidates.push(c); candidateRoots.set(c, da.group); }
+        });
+      })(droppedArts[dri]);
+    }
+
     var hits = artRay.intersectObjects(candidates, false);
     if (!hits.length) return;
-    /* Find the top-level art group */
-    var p = hits[0].object;
-    while (p && p.parent !== artGroup) p = p.parent;
-    if (!p) return;
-    /* Detach from wall, put in world space */
-    var worldPos = new THREE.Vector3(); p.getWorldPosition(worldPos);
-    var worldQuat = new THREE.Quaternion(); p.getWorldQuaternion(worldQuat);
-    artGroup.remove(p);
-    scene.add(p);
-    p.position.copy(worldPos);
-    p.quaternion.copy(worldQuat);
-    draggedArt = p;
+    var root = candidateRoots.get(hits[0].object);
+    if (!root) return;
+
+    /* Detach to world space */
+    var worldPos = new THREE.Vector3(); root.getWorldPosition(worldPos);
+    var worldQuat = new THREE.Quaternion(); root.getWorldQuaternion(worldQuat);
+    if (root.parent) root.parent.remove(root);
+
+    /* Remove from droppedArts if it was there */
+    for (var dii = droppedArts.length - 1; dii >= 0; dii--) {
+      if (droppedArts[dii].group === root) { droppedArts.splice(dii, 1); break; }
+    }
+
+    scene.add(root);
+    root.position.copy(worldPos);
+    root.quaternion.copy(worldQuat);
+    draggedArt = root;
     isDragging = true;
     dragVelocity.set(0, 0, 0);
+    playGrabSound();
   });
 
-  renderer.domElement.addEventListener("mouseup", function(e) {
-    if (!inMuseum || !controls.isLocked || e.button !== 2) return;
-    e.preventDefault();
-    if (isDragging) dropDraggedArt();
-  });
-
-  /* Prevent default context menu when pointer is locked */
+  /* Prevent context menu while pointer is locked */
   renderer.domElement.addEventListener("contextmenu", function(e) { e.preventDefault(); });
 }
 
@@ -2311,6 +2748,7 @@ if (!isTouch) {
     if (e.code === "KeyM" && inMuseum) toggleMusic();
     if (e.code === "Space" && inMuseum && !isJumping && !isSitting) {
       e.preventDefault(); isJumping = true; jumpVelocity = JUMP_FORCE;
+      playJumpSound();
     }
   });
   window.addEventListener("keyup", function(e) {
@@ -2485,6 +2923,24 @@ function dropDraggedArt() {
   if (!draggedArt) return;
   var art = draggedArt;
   draggedArt = null; isDragging = false;
+
+  /* Check if close enough to snap back to original wall slot */
+  var slot = art.userData.wallSlot;
+  if (slot) {
+    var dx = art.position.x - slot.pos.x;
+    var dy = art.position.y - slot.pos.y;
+    var dz = art.position.z - slot.pos.z;
+    if (Math.sqrt(dx*dx + dy*dy + dz*dz) < 2.2) {
+      scene.remove(art);
+      art.position.copy(slot.pos);
+      art.rotation.set(0, slot.ry, 0);
+      art.scale.setScalar(1);
+      artGroup.add(art);
+      playWallSnapSound();
+      return;
+    }
+  }
+
   /* Apply a gentle toss velocity from drag movement */
   var vel = dragVelocity.clone().multiplyScalar(2.8);
   vel.y = Math.max(vel.y, 0);
@@ -2508,17 +2964,35 @@ function tickDraggedArt(dt) {
 }
 
 function tickDroppedArts(dt) {
+  var PUSH_RADIUS = 0.88;
+  var camX = camera.position.x, camZ = camera.position.z;
   for (var di = droppedArts.length - 1; di >= 0; di--) {
     var da = droppedArts[di];
+
+    /* Player push physics */
+    var pdx = da.group.position.x - camX, pdz = da.group.position.z - camZ;
+    var pd = Math.sqrt(pdx * pdx + pdz * pdz);
+    if (pd < PUSH_RADIUS && pd > 0.01) {
+      var pf = (PUSH_RADIUS - pd) / PUSH_RADIUS * 6.5;
+      da.velocity.x += (pdx / pd) * pf;
+      da.velocity.z += (pdz / pd) * pf;
+      if (da.onGround) { da.velocity.y += 1.2; da.onGround = false; }
+    }
+
     if (da.onGround) continue;
     da.velocity.y += GRAVITY * dt;
     da.group.position.addScaledVector(da.velocity, dt);
+    /* Gentle spin while flying */
+    var spinRate = (Math.abs(da.velocity.x) + Math.abs(da.velocity.z)) * 0.4;
+    da.group.rotation.y += spinRate * dt;
     /* Floor collision */
     var floorLimit = ART_H / 2 + 0.01;
     if (da.group.position.y < floorLimit) {
       da.group.position.y = floorLimit;
+      var bounceSpeed = Math.abs(da.velocity.y);
       da.velocity.y = -da.velocity.y * 0.35;
       da.velocity.x *= 0.75; da.velocity.z *= 0.75;
+      if (bounceSpeed > 0.9) playDropFloorSound();
       if (Math.abs(da.velocity.y) < 0.3) { da.velocity.set(0, 0, 0); da.onGround = true; }
     }
   }
@@ -2540,25 +3014,95 @@ function easeOutBack(t) {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
+/* ── Arms tick ────────────────────────────────────────────────────────────── */
+function tickArms(dt) {
+  var visible = showArms && !isSitting;
+  armsGroup.visible = visible;
+  if (!visible) return;
+
+  /* Walking swing */
+  var moving = keys.w || keys.s || keys.a || keys.d;
+  if (moving) walkSwing += dt * 7.5;
+
+  /* Grab lerp */
+  var targetGrab = isDragging ? 1.0 : 0.0;
+  grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
+
+  /* Swing amplitude fades out when not moving */
+  var swingAmp = moving ? 0.18 : 0;
+  var swingR =  Math.sin(walkSwing)            * swingAmp;
+  var swingL =  Math.sin(walkSwing + Math.PI)  * swingAmp;
+
+  /* Grab offset — arms extend forward and up */
+  var grabZ = grabAnim * -0.10;
+  var grabY = grabAnim *  0.06;
+
+  armRGroup.position.set( 0.24, -0.30 + grabY, -0.34 + grabZ);
+  armLGroup.position.set(-0.24, -0.30 + grabY, -0.34 + grabZ);
+  armRGroup.rotation.x = swingR - grabAnim * 0.38;
+  armLGroup.rotation.x = swingL - grabAnim * 0.38;
+}
+
+/* ── Reset gallery ────────────────────────────────────────────────────────── */
+function resetGallery() {
+  /* Snap dropped arts back to their wall slots */
+  for (var ri2 = droppedArts.length - 1; ri2 >= 0; ri2--) {
+    var da2 = droppedArts[ri2];
+    var art2 = da2.group;
+    scene.remove(art2);
+    if (art2.userData.wallSlot) {
+      art2.position.copy(art2.userData.wallSlot.pos);
+      art2.rotation.set(0, art2.userData.wallSlot.ry, 0);
+      art2.scale.setScalar(1);
+      artGroup.add(art2);
+    } else {
+      dispose(art2);
+    }
+  }
+  droppedArts = [];
+  /* Cancel any active drag */
+  if (isDragging && draggedArt) {
+    var dart = draggedArt;
+    draggedArt = null; isDragging = false;
+    scene.remove(dart);
+    if (dart.userData.wallSlot) {
+      dart.position.copy(dart.userData.wallSlot.pos);
+      dart.rotation.set(0, dart.userData.wallSlot.ry, 0);
+      dart.scale.setScalar(1);
+      artGroup.add(dart);
+    } else {
+      dispose(dart);
+    }
+  }
+  playWallSnapSound();
+  /* Reset time scale */
+  timeScale = 1.0;
+  var tss = $("timeSpeedSlider");
+  if (tss) tss.value = 1;
+}
+
 /* ── Render loop ──────────────────────────────────────────────────────────── */
 var clock = new THREE.Timer();
 var roomCheckTimer = 0;
 function animate() {
   requestAnimationFrame(animate);
   clock.update();
-  var dt = Math.min(clock.getDelta(), 0.05);
+  var dt = Math.min(clock.getDelta(), 0.05) * timeScale;
   var shouldMove = isTouch ? inMuseum : (controls && controls.isLocked);
   if (shouldMove) move(dt);
   tickReveal(dt);
   checkButtonInteraction();
   checkSecretButtonInteraction();
+  checkDoorButtonInteraction();
   checkHistoryInteraction();
   checkBenchProximity();
   tickHistoryAnims(dt);
   tickDraggedArt(dt);
   tickDroppedArts(dt);
   tickExplode(dt);
+  tickDoorAnim(dt);
   tickHintDismiss(dt);
+  tickArms(dt);
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
