@@ -253,6 +253,21 @@ const pedestalMat = new THREE.MeshPhysicalMaterial({ color: "#d8d0c4", roughness
 const sharedVoxelGeo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
 const sharedPlaceholderGeo = new THREE.BoxGeometry(2.32, 2.32, 0.04);
 
+/* ── Shared voxel material (compiled once — all art uses the same program) ── */
+const sharedVoxelMat = new THREE.MeshPhysicalMaterial({
+  color: "#060606", roughness: 0.04, metalness: 0.08,
+  clearcoat: 1.0, clearcoatRoughness: 0.03,
+});
+/* Separate instances for explosion fade (need transparent flag + mutable opacity) */
+const sharedExplodeVoxMat = new THREE.MeshPhysicalMaterial({
+  color: "#060606", roughness: 0.04, metalness: 0.08,
+  clearcoat: 1.0, clearcoatRoughness: 0.03, transparent: true, opacity: 1.0,
+});
+const sharedExplodeDebrisMat = new THREE.MeshPhysicalMaterial({
+  color: "#0a0a0a", roughness: 0.06, metalness: 0.08,
+  clearcoat: 0.9, clearcoatRoughness: 0.05, transparent: true, opacity: 1.0,
+});
+
 /* ── Gallery + art groups ─────────────────────────────────────────────────── */
 const galleryGroup = new THREE.Group();
 scene.add(galleryGroup);
@@ -706,7 +721,8 @@ function unloadRoom(ri) {
 
 var sharedMats = [floorMat, wallMat, accentWallMat, panelMat, ceilMat, mouldMat, baseMat,
   frameMat, backMat, placeMat, benchMat, benchSeatMat, corrFloorMat,
-  archMat, inlayMat, beamMat, trimMat, trackMat, pedestalMat];
+  archMat, inlayMat, beamMat, trimMat, trackMat, pedestalMat,
+  sharedVoxelMat, sharedExplodeVoxMat, sharedExplodeDebrisMat];
 function isSharedMaterial(m) {
   return sharedMats.indexOf(m) >= 0;
 }
@@ -928,8 +944,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   }
 
   if (voxels.length) {
-    var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
-    var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
+    var inst = new THREE.InstancedMesh(sharedVoxelGeo, sharedVoxelMat, voxels.length);
     var m4 = new THREE.Matrix4();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
@@ -940,7 +955,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
       inst.setMatrixAt(vi, m4);
     }
     inst.instanceMatrix.needsUpdate = true;
-    inst.castShadow = inst.receiveShadow = true;
+    inst.castShadow = false; inst.receiveShadow = false;
     inst.userData.isVoxel = true;
     group.add(inst);
   }
@@ -1113,8 +1128,7 @@ function buildVoxelFrame(rgbaData) {
     }
   }
   if (!voxels.length) return null;
-  var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
-  var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
+  var inst = new THREE.InstancedMesh(sharedVoxelGeo, sharedVoxelMat, voxels.length);
   var m4 = new THREE.Matrix4();
   var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
   for (var vi = 0; vi < voxels.length; vi++) {
@@ -1125,7 +1139,7 @@ function buildVoxelFrame(rgbaData) {
     inst.setMatrixAt(vi, m4);
   }
   inst.instanceMatrix.needsUpdate = true;
-  inst.castShadow = inst.receiveShadow = true;
+  inst.castShadow = false; inst.receiveShadow = false;
   inst.userData.isVoxel = true;
   return inst;
 }
@@ -1162,11 +1176,12 @@ async function toggleHistoryAnim(artGroup3d, tokenId) {
   var frames = await fetchHistoryFrames(tokenId);
   if (!frames || frames.length < 2) return;
 
-  /* Pre-build all voxel + flat meshes for each frame */
+  /* Pre-build all voxel + flat meshes for each frame, yielding between builds */
   var voxelMeshes = [], flatMeshes = [];
   for (var fi = 0; fi < frames.length; fi++) {
     voxelMeshes.push(buildVoxelFrame(frames[fi]));
     flatMeshes.push(buildFlatFrame(frames[fi]));
+    await yieldToFrame();
   }
 
   /* Hide the original art children (voxel, flat, frame, backing) */
@@ -1620,8 +1635,7 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     }
   }
   if (voxels.length) {
-    var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
-    var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
+    var inst = new THREE.InstancedMesh(sharedVoxelGeo, sharedVoxelMat, voxels.length);
     var m4 = new THREE.Matrix4();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
@@ -1632,7 +1646,7 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
       inst.setMatrixAt(vi, m4);
     }
     inst.instanceMatrix.needsUpdate = true;
-    inst.castShadow = true;
+    inst.castShadow = false;
     /* Orient facing left (into the alcove, away from the back wall) */
     var artGroup2 = new THREE.Group();
     artGroup2.add(inst);
@@ -2036,6 +2050,9 @@ function pressSecretButton() {
   if (explodeActive || !secretBtnMesh) return;
   explodeActive = true;
   explodeResetTimer = 10.0;
+  /* Reset shared explosion material opacity (in case of re-trigger after fade) */
+  sharedExplodeVoxMat.opacity = 1.0;
+  sharedExplodeDebrisMat.opacity = 1.0;
   /* Depress the button */
   secretBtnMesh.position.z -= 0.01;
   playExplodeSound();
@@ -2056,10 +2073,9 @@ function pressSecretButton() {
     var numVoxels = instMesh ? Math.min(instMesh.count, 200) : 40;
     var dummy = new THREE.Matrix4(), col = new THREE.Color();
     for (var vi = 0; vi < numVoxels; vi++) {
-      var voxMat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03, transparent: true, opacity: 1.0 });
       if (instMesh) { instMesh.getMatrixAt(vi, dummy); }
       var sz = VOXEL_SIZE * (1.4 + Math.random() * 1.2);
-      var vox = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), voxMat);
+      var vox = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), sharedExplodeVoxMat);
       vox.position.copy(worldPos);
       vox.position.x += (Math.random() - 0.5) * ART_W;
       vox.position.y += (Math.random() - 0.5) * ART_H + ART_H * 0.5;
@@ -2081,9 +2097,8 @@ function pressSecretButton() {
     }
     /* Extra tiny debris for visual richness */
     for (var di2 = 0; di2 < 30; di2++) {
-      var dMat = new THREE.MeshPhysicalMaterial({ color: "#0a0a0a", roughness: 0.06, metalness: 0.08, clearcoat: 0.9, clearcoatRoughness: 0.05, transparent: true, opacity: 1.0 });
       var ds = VOXEL_SIZE * (0.5 + Math.random() * 0.8);
-      var dv = new THREE.Mesh(new THREE.BoxGeometry(ds, ds, ds), dMat);
+      var dv = new THREE.Mesh(new THREE.BoxGeometry(ds, ds, ds), sharedExplodeDebrisMat);
       dv.position.copy(worldPos);
       dv.position.x += (Math.random() - 0.5) * ART_W * 1.4;
       dv.position.y += Math.random() * ART_H;
@@ -2106,6 +2121,12 @@ function pressSecretButton() {
 function tickExplode(dt) {
   if (!explodeActive) return;
   var FADE_START = 2.5;  /* seconds before reset when fade begins */
+  /* Apply fade to shared materials once per tick (all particles share them) */
+  if (explodeResetTimer < FADE_START) {
+    var fadeT = Math.max(0, explodeResetTimer / FADE_START);
+    sharedExplodeVoxMat.opacity = fadeT;
+    sharedExplodeDebrisMat.opacity = fadeT;
+  }
   /* Tick particles */
   for (var pi = 0; pi < explodeParticles.length; pi++) {
     var p = explodeParticles[pi];
@@ -2120,11 +2141,6 @@ function tickExplode(dt) {
       p.mesh.position.y = 0.04;
       p.vel.y = Math.abs(p.vel.y) * 0.25;
       p.vel.x *= 0.65; p.vel.z *= 0.65;
-    }
-    /* Fade out in last FADE_START seconds */
-    if (explodeResetTimer < FADE_START) {
-      var fadeT = Math.max(0, explodeResetTimer / FADE_START);
-      if (p.mesh.material.opacity !== undefined) p.mesh.material.opacity = fadeT;
     }
     p.life -= dt;
   }
