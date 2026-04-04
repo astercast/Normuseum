@@ -51,6 +51,26 @@ var doorAnim = 0;            /* 0 = closed, 1 = open */
 var hiddenRoomGroup = null;
 var hiddenRoomWalkZone = null;  /* { minX, maxX, minZ, maxZ } — added when door opens */
 
+/* ── Links button + panels ────────────────────────────────────────────────── */
+var linksBtnMesh = null;
+var linksBtnHovered = false;
+var linkPanelMeshes = [];   /* [{mesh, url}] */
+var linkPanelHovered = null;
+var linkPanelsVisible = false;
+var linkPanelGroup = null;
+
+var LINKS_DATA = [
+  { url: "https://legacy.normies.art/normiecam",          label: "normie cam",      desc: "live webcam viewer" },
+  { url: "https://editnormies.com",                       label: "make gifs",       desc: "create & edit normie gifs" },
+  { url: "https://normiegallery.netlify.app/",            label: "normie gallery",  desc: "trait-based gallery" },
+  { url: "https://normie-map-production.up.railway.app/", label: "normie map",      desc: "holder world map" },
+  { url: "https://normiesarchive.xyz/",                   label: "archive",         desc: "normies history archive" },
+  { url: "https://normski-generator.vercel.app/",         label: "normsky",         desc: "normies + banksy mashup" },
+  { url: "https://normiesburntracker.lovable.app/",       label: "burn tracker",    desc: "track the burns" },
+  { url: "https://normies-remixer.vercel.app/",           label: "remixer",         desc: "remix your normie" },
+  { url: "https://normie-3d.vercel.app/",                 label: "3d & graveyard",  desc: "normies 3d + graveyard" },
+];
+
 /* ── Hint auto-dismiss ────────────────────────────────────────────────────── */
 var hintDismissTimer = 0;
 var HINT_PERSIST = 4.0;  /* seconds before hint fades if still showing */
@@ -654,6 +674,10 @@ function buildRoom(ri) {
     doorBtnMesh = dBtn.userData.btnMesh;
 
     buildHiddenRoom(g, cx + WALL_X, dbz, ROOM_H);
+
+    /* ── Entrance title sign + links system ── */
+    buildRoomTitleSign(g, cx, room.zStart);
+    buildLinksSystem(g, cx, room.zStart);
   }
 
   galleryGroup.add(g);
@@ -879,6 +903,8 @@ function buildMuseum(totalCount) {
   doorBtnMesh = null; doorPanel = null; doorPanelOrigY = null;
   doorOpen = false; doorAnimating = false; doorAnim = 0;
   hiddenRoomGroup = null; hiddenRoomWalkZone = null;
+  linksBtnMesh = null; linkPanelMeshes = []; linkPanelHovered = null;
+  linkPanelsVisible = false; linkPanelGroup = null;
   planLayout(totalCount);
 
   /* Only build rooms 0 and 1 upfront — the rest are built lazily */
@@ -1657,24 +1683,127 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
   }
 }
 
+/* ── "What is Art?" title sign for main room entrance wall ──────────────── */
+function buildRoomTitleSign(parentGroup, cx, zStart) {
+  var c = document.createElement("canvas"); c.width = 1200; c.height = 280;
+  var ctx = c.getContext("2d");
+  ctx.fillStyle = "#ebe3d2"; ctx.fillRect(0, 0, 1200, 280);
+  ctx.fillStyle = "#8c7c5c"; ctx.fillRect(50, 22, 1100, 3);
+  ctx.fillStyle = "#8c7c5c"; ctx.fillRect(50, 255, 1100, 3);
+  ctx.fillStyle = "#2a2420";
+  ctx.font = 'italic 400 88px Georgia, serif';
+  ctx.textAlign = "center";
+  ctx.fillText("What is Art?", 600, 122);
+  ctx.font = 'italic 400 68px Georgia, serif';
+  ctx.fillText("What is an Agent?", 600, 218);
+  var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  var backing = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.98, 0.04),
+    new THREE.MeshStandardMaterial({ color: "#d4c9ae", roughness: 0.55, metalness: 0.12 }));
+  backing.position.set(cx, 5.4, zStart - 0.05);
+  backing.rotation.y = Math.PI;
+  parentGroup.add(backing);
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 0.95),
+    new THREE.MeshBasicMaterial({ map: tex }));
+  plane.position.set(cx, 5.4, zStart - 0.07);
+  plane.rotation.y = Math.PI;
+  parentGroup.add(plane);
+}
+
+/* ── Single link panel button ─────────────────────────────────────────────── */
+function buildLinkPanel(label, desc) {
+  var c = document.createElement("canvas"); c.width = 560; c.height = 200;
+  var ctx = c.getContext("2d");
+  ctx.fillStyle = "#16120e"; ctx.fillRect(0, 0, 560, 200);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(24, 16, 512, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(24, 182, 512, 2);
+  ctx.fillStyle = "#d8cdb0";
+  ctx.font = '600 52px "IBM Plex Mono", monospace';
+  ctx.textAlign = "center";
+  ctx.fillText(label, 280, 90);
+  ctx.fillStyle = "#8a7e60";
+  ctx.font = '400 28px "IBM Plex Mono", monospace';
+  ctx.fillText(desc, 280, 148);
+  var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  var group = new THREE.Group();
+  var backing = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.54, 0.06),
+    new THREE.MeshStandardMaterial({ color: "#0e0c0a", roughness: 0.45, metalness: 0.10 }));
+  group.add(backing);
+  var face = new THREE.Mesh(new THREE.PlaneGeometry(1.46, 0.50),
+    new THREE.MeshBasicMaterial({ map: tex }));
+  face.position.z = 0.032;
+  face.userData.isLinkPanel = true;
+  group.add(face);
+  group.userData.btnMesh = face;
+  return group;
+}
+
+/* ── Links floor button + the whole panel cluster ─────────────────────────── */
+function buildLinksSystem(parentGroup, cx, zStart) {
+  /* Floor disc button on the left side near the entrance */
+  var discGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.038, 32);
+  var discMat = new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.25, metalness: 0.55 });
+  var disc = new THREE.Mesh(discGeo, discMat);
+  var bx = cx - 2.4, bz = zStart - 2.2;
+  disc.position.set(bx, 0.019, bz);
+  disc.userData.isLinksBtn = true;
+  linksBtnMesh = disc;
+  parentGroup.add(disc);
+
+  /* "links" floating label above the disc */
+  var lc = document.createElement("canvas"); lc.width = 320; lc.height = 80;
+  var lctx = lc.getContext("2d");
+  lctx.fillStyle = "rgba(0,0,0,0)"; lctx.fillRect(0, 0, 320, 80);
+  lctx.fillStyle = "#8c7c5c";
+  lctx.font = '500 44px "IBM Plex Mono", monospace';
+  lctx.textAlign = "center";
+  lctx.fillText("links", 160, 56);
+  var ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace;
+  var lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.175),
+    new THREE.MeshBasicMaterial({ map: ltex, transparent: true }));
+  lbl.position.set(bx, 0.42, bz);
+  lbl.rotation.x = -Math.PI / 8;
+  parentGroup.add(lbl);
+
+  /* Nine link panels in an arc at eye level, centred ahead of the button */
+  var pg = new THREE.Group();
+  linkPanelMeshes = [];
+  var count = LINKS_DATA.length;
+  var arcHalf = Math.PI * 0.52;  /* ≈108° total spread */
+  var radius  = 5.0;
+  var aimZ    = zStart - 10;
+  for (var li = 0; li < count; li++) {
+    var angle = -arcHalf / 2 + arcHalf * (li / (count - 1));
+    var px = cx + Math.sin(angle) * radius;
+    var pz = aimZ + radius - Math.cos(angle) * radius;
+    var panel = buildLinkPanel(LINKS_DATA[li].label, LINKS_DATA[li].desc);
+    panel.position.set(px, 2.15, pz);
+    panel.rotation.y = -angle;
+    pg.add(panel);
+    linkPanelMeshes.push({ mesh: panel.userData.btnMesh, url: LINKS_DATA[li].url });
+  }
+  pg.visible = false;
+  linkPanelGroup = pg;
+  parentGroup.add(pg);
+}
+
 function buildQuotePlaque(parentGroup, wallX, centerZ, roomH) {
-  /* Canvas with the quote */
   var c = document.createElement("canvas"); c.width = 800; c.height = 200;
   var ctx = c.getContext("2d");
   /* Dark background */
   ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 800, 200);
   /* Subtle gold top rule */
   ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 20, 740, 2);
-  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 178, 740, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 190, 740, 2);
   /* Quote text */
   ctx.fillStyle = "#d8cdb0";
   ctx.font = 'italic 400 36px Georgia, serif';
   ctx.textAlign = "center";
-  ctx.fillText("\u201cWhat is art? What is an agent?\u201d", 400, 92);
+  ctx.fillText("“Artists always tell you where the world is going,", 400, 78);
+  ctx.fillText("you just have to pay attention.”", 400, 124);
   /* Normie ID below */
   ctx.fillStyle = "#7a6e56";
   ctx.font = '500 22px "IBM Plex Mono", monospace';
-  ctx.fillText("normie #9098", 400, 148);
+  ctx.fillText("normie #9098", 400, 168);
   var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
 
   var plaqueGroup = new THREE.Group();
@@ -1776,6 +1905,59 @@ function buildOrange() {
 /* ── Raycaster + interaction ──────────────────────────────────────────────── */
 var raycaster = new THREE.Raycaster(); raycaster.far = 3.5;
 var screenCenter = new THREE.Vector2(0, 0);
+
+/* ── Links floor button check ─────────────────────────────────────────────── */
+function checkLinksBtnInteraction() {
+  if (!inMuseum || !linksBtnMesh) { linksBtnHovered = false; return; }
+  var wp = new THREE.Vector3();
+  linksBtnMesh.getWorldPosition(wp);
+  var prev = linksBtnHovered;
+  linksBtnHovered = camera.position.distanceTo(wp) < 2.5;
+  if (linksBtnHovered && !prev) updateInteractionHint(true, "links");
+  if (!linksBtnHovered && prev && !buttonHovered && !historyBtnHovered) updateInteractionHint(false);
+}
+
+/* ── Link panel hover check ───────────────────────────────────────────────── */
+function checkLinkPanelInteraction() {
+  if (!inMuseum || !linkPanelsVisible || !linkPanelMeshes.length) {
+    if (linkPanelHovered) { linkPanelHovered = null; updateInteractionHint(false); }
+    return;
+  }
+  var prev = linkPanelHovered;
+  if (isTouch) {
+    var best = null, bestD = 3.0;
+    linkPanelMeshes.forEach(function(lp) {
+      var wp = new THREE.Vector3(); lp.mesh.getWorldPosition(wp);
+      var d = camera.position.distanceTo(wp);
+      if (d < bestD) { bestD = d; best = lp; }
+    });
+    linkPanelHovered = best;
+  } else {
+    raycaster.setFromCamera(screenCenter, camera);
+    var meshes = linkPanelMeshes.map(function(lp) { return lp.mesh; });
+    var hits = raycaster.intersectObjects(meshes, false);
+    if (hits.length && hits[0].distance < 3.5) {
+      var hitMesh = hits[0].object;
+      linkPanelHovered = linkPanelMeshes.find(function(lp) { return lp.mesh === hitMesh; }) || null;
+    } else {
+      linkPanelHovered = null;
+    }
+  }
+  if (linkPanelHovered && !prev) updateInteractionHint(true, "link");
+  if (!linkPanelHovered && prev && !buttonHovered && !historyBtnHovered) updateInteractionHint(false);
+}
+
+function pressLinksBtn() {
+  if (!linkPanelGroup) return;
+  linkPanelsVisible = !linkPanelsVisible;
+  linkPanelGroup.visible = linkPanelsVisible;
+  playButtonClick();
+}
+
+function pressLinkPanel(url) {
+  window.open(url, "_blank", "noopener,noreferrer");
+  playButtonClick();
+}
 var historyBtnHovered = false;
 var hoveredHistoryGroup = null;  /* the art group whose history btn is being aimed at */
 
@@ -1978,6 +2160,12 @@ function updateInteractionHint(show, mode) {
   if (mode === "history") {
     el.querySelector(".hint-desktop").textContent = "[E] play history";
     el.querySelector(".hint-touch").textContent = "tap to play history";
+  } else if (mode === "links") {
+    el.querySelector(".hint-desktop").textContent = "[E] links";
+    el.querySelector(".hint-touch").textContent = "tap for links";
+  } else if (mode === "link") {
+    el.querySelector(".hint-desktop").textContent = "[E] open link";
+    el.querySelector(".hint-touch").textContent = "tap to open";
   } else {
     el.querySelector(".hint-desktop").textContent = "[E] toggle frames";
     el.querySelector(".hint-touch").textContent = "tap to toggle frames";
@@ -1995,7 +2183,7 @@ function updateInteractionHint(show, mode) {
 function tickHintDismiss(dt) {
   if (hintDismissTimer <= 0) return;
   /* Don't dismiss while actively hovering an interactive object */
-  if (buttonHovered || historyBtnHovered) { hintDismissTimer = HINT_PERSIST; return; }
+  if (buttonHovered || historyBtnHovered || linksBtnHovered || linkPanelHovered) { hintDismissTimer = HINT_PERSIST; return; }
   hintDismissTimer -= dt;
   if (hintDismissTimer <= 0) {
     hintDismissTimer = 0;
@@ -2204,6 +2392,8 @@ function playExplodeSound() {
 }
 
 function tryInteract() {
+  if (linkPanelHovered) { pressLinkPanel(linkPanelHovered.url); return; }
+  if (linksBtnHovered) { pressLinksBtn(); return; }
   if (secretBtnHovered) { pressSecretButton(); return; }
   if (doorBtnHovered) { pressDoorButton(); return; }
   if (historyBtnHovered && hoveredHistoryGroup) {
@@ -2237,6 +2427,20 @@ function tryInteract() {
       }
     });
     if (bestG) { toggleHistoryAnim(bestG, bestG.userData.tokenId); return; }
+    /* Links floor button / link panels (touch fallback) */
+    if (linksBtnMesh && !linksBtnHovered) {
+      var wpl = new THREE.Vector3(); linksBtnMesh.getWorldPosition(wpl);
+      if (camera.position.distanceTo(wpl) < 3.5) { pressLinksBtn(); return; }
+    }
+    if (linkPanelsVisible && linkPanelMeshes.length && !linkPanelHovered) {
+      var bestLinkD = 3.5, bestLink = null;
+      linkPanelMeshes.forEach(function(lp) {
+        var wplp = new THREE.Vector3(); lp.mesh.getWorldPosition(wplp);
+        var d = camera.position.distanceTo(wplp);
+        if (d < bestLinkD) { bestLinkD = d; bestLink = lp; }
+      });
+      if (bestLink) { pressLinkPanel(bestLink.url); return; }
+    }
     /* Secret explode button */
     if (secretBtnMesh && !explodeActive) {
       var wp5 = new THREE.Vector3();
@@ -3440,6 +3644,8 @@ function animate() {
   checkSecretButtonInteraction();
   checkDoorButtonInteraction();
   checkHistoryInteraction();
+  checkLinksBtnInteraction();
+  checkLinkPanelInteraction();
 
   tickHistoryAnims(dt);
   tickDraggedArt(dt);
