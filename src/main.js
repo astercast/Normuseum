@@ -280,8 +280,8 @@ const sharedVoxelMat = new THREE.MeshPhysicalMaterial({
 });
 /* White voxel material — used exclusively for the hidden-room #9098 display */
 const hiddenVoxelMat = new THREE.MeshPhysicalMaterial({
-  color: "#f2f0ed", roughness: 0.06, metalness: 0.06,
-  clearcoat: 0.8, clearcoatRoughness: 0.04,
+  color: "#b0aca6", roughness: 0.18, metalness: 0.04,
+  clearcoat: 0.4, clearcoatRoughness: 0.10,
 });
 /* Separate instances for explosion fade (need transparent flag + mutable opacity) */
 const sharedExplodeVoxMat = new THREE.MeshPhysicalMaterial({
@@ -605,15 +605,10 @@ function buildRoom(ri) {
   var slotZStart = room.zStart - ROOM_PAD;
   /* Right-wall door exclusion zone for room 0 (door panel lives here) */
   var doorExclMinZ = room.zStart - 8.5, doorExclMaxZ = room.zStart - 3.5;
-  /* Left-wall links-button exclusion zone for room 0 */
-  var linksExclMinZ = room.zStart - 9.5, linksExclMaxZ = room.zStart - 4.5;
   /* Left wall (x = cx - WO + 0.05) and Right wall (x = cx + WO - 0.05) */
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
-    /* Skip left-wall slots that overlap the links button */
-    if (!(ri === 0 && z >= linksExclMinZ && z <= linksExclMaxZ)) {
-      room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
-    }
+    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
     /* Skip right-wall slots that overlap the hidden door panel */
     if (ri === 0 && z >= doorExclMinZ && z <= doorExclMaxZ) continue;
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
@@ -627,8 +622,7 @@ function buildRoom(ri) {
     for (var ei = 0; ei < room.slotsPerEnd; ei++) {
       var ex = cx - endTotalW / 2 + ei * endSlotSpacing;
       if (ri === 0) {
-        /* Solid front wall — face into the room */
-        room.artSlots.push({ pos: new THREE.Vector3(ex, 2.6, room.zStart - 0.05), ry: Math.PI });
+        /* Front wall is behind spawn — skip art slots here */
       }
       if (ri === rooms.length - 1) {
         /* Solid back wall — face into the room */
@@ -687,7 +681,7 @@ function buildRoom(ri) {
 
     /* ── Entrance title sign + links system ── */
     buildRoomTitleSign(g, cx, room.zEnd);
-    buildLinksSystem(g, cx, room.zStart);
+    buildLinksSystem(g, cx, zMid);
   }
 
   galleryGroup.add(g);
@@ -1811,23 +1805,23 @@ function buildLinksSystem(parentGroup, cx, zStart) {
 }
 
 function buildQuotePlaque(parentGroup, wallX, centerZ, roomH) {
-  var c = document.createElement("canvas"); c.width = 800; c.height = 200;
+  var c = document.createElement("canvas"); c.width = 1100; c.height = 200;
   var ctx = c.getContext("2d");
   /* Dark background */
-  ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 800, 200);
+  ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 1100, 200);
   /* Subtle gold top rule */
-  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 20, 740, 2);
-  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 190, 740, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 20, 1040, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 190, 1040, 2);
   /* Quote text */
   ctx.fillStyle = "#d8cdb0";
   ctx.font = 'italic 400 40px Georgia, serif';
   ctx.textAlign = "center";
-  ctx.fillText("“Artists always tell you where the world is going,", 400, 76);
-  ctx.fillText("you just have to pay attention.”", 400, 128);
+  ctx.fillText("“Artists always tell you where the world is going,", 550, 76);
+  ctx.fillText("you just have to pay attention.”", 550, 128);
   /* Normie ID below */
   ctx.fillStyle = "#7a6e56";
   ctx.font = '500 22px "IBM Plex Mono", monospace';
-  ctx.fillText("normie #9098", 400, 168);
+  ctx.fillText("normie #9098", 550, 168);
   var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
 
   var plaqueGroup = new THREE.Group();
