@@ -1806,15 +1806,15 @@ function buildLinksSystem(parentGroup, cx, zMid) {
   for (var li = 0; li < LINKS_DATA.length; li++) {
     var col = li % COLS;
     var row = Math.floor(li / COLS);
-    /* Angle sweeps left–right around the +z axis (toward entrance) */
+    /* Angle sweeps left–right, arc fans away from entrance (into the room) */
     var angle = -arcSpread + col * arcSpread;
     var px = podX + Math.sin(angle) * arcRadius;
-    var pz = podZ + Math.cos(angle) * arcRadius;
+    var pz = podZ - Math.cos(angle) * arcRadius;
     var py = gridY + (1 - row) * rowSpacing;
     var panel = buildLinkPanel(LINKS_DATA[li].label, LINKS_DATA[li].desc);
     panel.position.set(px, py, pz);
-    /* Face each panel back toward the podium */
-    panel.rotation.y = angle - Math.PI;
+    /* Face each panel back toward the podium (toward entrance side) */
+    panel.rotation.y = -angle;
     pg.add(panel);
     linkPanelMeshes.push({ mesh: panel.userData.btnMesh, url: LINKS_DATA[li].url });
   }
