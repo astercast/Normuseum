@@ -278,6 +278,11 @@ const sharedVoxelMat = new THREE.MeshPhysicalMaterial({
   color: "#060606", roughness: 0.04, metalness: 0.08,
   clearcoat: 1.0, clearcoatRoughness: 0.03,
 });
+/* White voxel material — used exclusively for the hidden-room #9098 display */
+const hiddenVoxelMat = new THREE.MeshPhysicalMaterial({
+  color: "#f2f0ed", roughness: 0.06, metalness: 0.06,
+  clearcoat: 0.8, clearcoatRoughness: 0.04,
+});
 /* Separate instances for explosion fade (need transparent flag + mutable opacity) */
 const sharedExplodeVoxMat = new THREE.MeshPhysicalMaterial({
   color: "#060606", roughness: 0.04, metalness: 0.08,
@@ -1667,7 +1672,7 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     }
   }
   if (voxels.length) {
-    var inst = new THREE.InstancedMesh(sharedVoxelGeo, sharedVoxelMat, voxels.length);
+    var inst = new THREE.InstancedMesh(sharedVoxelGeo, hiddenVoxelMat, voxels.length);
     var m4 = new THREE.Matrix4();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
@@ -1815,10 +1820,10 @@ function buildQuotePlaque(parentGroup, wallX, centerZ, roomH) {
   ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 190, 740, 2);
   /* Quote text */
   ctx.fillStyle = "#d8cdb0";
-  ctx.font = 'italic 400 36px Georgia, serif';
+  ctx.font = 'italic 400 40px Georgia, serif';
   ctx.textAlign = "center";
-  ctx.fillText("“Artists always tell you where the world is going,", 400, 78);
-  ctx.fillText("you just have to pay attention.”", 400, 124);
+  ctx.fillText("“Artists always tell you where the world is going,", 400, 76);
+  ctx.fillText("you just have to pay attention.”", 400, 128);
   /* Normie ID below */
   ctx.fillStyle = "#7a6e56";
   ctx.font = '500 22px "IBM Plex Mono", monospace';
