@@ -578,10 +578,14 @@ function buildRoom(ri) {
   room.artSlots = [];
   var WO = ROOM_W / 2;
   var slotZStart = room.zStart - ROOM_PAD;
+  /* Right-wall door exclusion zone for room 0 (door panel lives here) */
+  var doorExclMinZ = room.zStart - 8.5, doorExclMaxZ = room.zStart - 3.5;
   /* Left wall (x = cx - WO + 0.05) and Right wall (x = cx + WO - 0.05) */
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
     room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
+    /* Skip right-wall slots that overlap the hidden door panel */
+    if (ri === 0 && z >= doorExclMinZ && z <= doorExclMaxZ) continue;
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
   }
   /* End walls — only use solid walls (no doorway).
@@ -632,13 +636,10 @@ function buildRoom(ri) {
     var applePed = fruitPedestals.find(function(fp) { return fp.isApple; });
     if (applePed) {
       var sBtn = buildSecretButton();
-      var facingRight = applePed.side < 0;
-      sBtn.position.set(
-        facingRight ? 0.26 : -0.26,
-        0.62,
-        0
-      );
-      sBtn.rotation.y = facingRight ? -Math.PI / 2 : Math.PI / 2;
+      /* Front face of pedestal — faces toward the entrance (+Z) so player
+         looks inward at the art while triggering the explosion */
+      sBtn.position.set(0, 0.62, 0.26);
+      sBtn.rotation.y = 0;
       applePed.group.add(sBtn);
       secretBtnMesh = sBtn.userData.btnMesh;
     }
