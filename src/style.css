@@ -714,6 +714,17 @@ body.touch-device .interaction-hint.visible { pointer-events: all; cursor: point
 .hint-touch { display: none; }
 body.touch-device .hint-desktop { display: none; }
 body.touch-device .hint-touch { display: inline; }
+body.touch-device .interaction-hint {
+  font-size: 15px;
+  padding: 10px 22px;
+  top: auto;
+  bottom: 200px;
+  transform: translateX(-50%);
+  background: var(--hud-bg);
+  border: 2px solid var(--accent, #e5c97a);
+  box-shadow: 0 0 14px rgba(229, 201, 122, 0.35);
+  letter-spacing: 0.08em;
+}
 
 /* ── Mobile joystick ─────────────────────────────────────────────────────── */
 #joystick-base {

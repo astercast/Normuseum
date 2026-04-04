@@ -1798,9 +1798,17 @@ function checkButtonInteraction() {
   if (!inMuseum || !activeBtn) {
     if (buttonHovered) { buttonHovered = false; updateInteractionHint(false); } return;
   }
-  raycaster.setFromCamera(screenCenter, camera);
-  var intersects = raycaster.intersectObject(activeBtn);
-  var hit = intersects.length > 0 && intersects[0].distance < 3.5;
+  var hit = false;
+  if (isTouch) {
+    /* On touch: proximity-based — no need to aim exactly */
+    var wp = new THREE.Vector3();
+    activeBtn.getWorldPosition(wp);
+    hit = camera.position.distanceTo(wp) < 3.5;
+  } else {
+    raycaster.setFromCamera(screenCenter, camera);
+    var intersects = raycaster.intersectObject(activeBtn);
+    hit = intersects.length > 0 && intersects[0].distance < 3.5;
+  }
   if (hit !== buttonHovered) { buttonHovered = hit; updateInteractionHint(hit); }
 }
 
@@ -1823,9 +1831,16 @@ function checkDoorButtonInteraction() {
     if (doorBtnHovered) { doorBtnHovered = false; }
     return;
   }
-  raycaster.setFromCamera(screenCenter, camera);
-  var hits = raycaster.intersectObject(doorBtnMesh, true);
-  var hit = hits.length > 0 && hits[0].distance < 2.5;
+  var hit = false;
+  if (isTouch) {
+    var wp2 = new THREE.Vector3();
+    doorBtnMesh.getWorldPosition(wp2);
+    hit = camera.position.distanceTo(wp2) < 3.0;
+  } else {
+    raycaster.setFromCamera(screenCenter, camera);
+    var hits = raycaster.intersectObject(doorBtnMesh, true);
+    hit = hits.length > 0 && hits[0].distance < 2.5;
+  }
   doorBtnHovered = hit;
 }
 
@@ -1901,6 +1916,26 @@ function checkHistoryInteraction() {
     if (historyBtnHovered) { historyBtnHovered = false; hoveredHistoryGroup = null; }
     return;
   }
+
+  if (isTouch) {
+    /* On touch: find nearest art group with history within range */
+    var bestDist3 = 3.5, bestGroup = null;
+    artGroup.traverse(function(c) {
+      if (c.userData && c.userData.hasHistory) {
+        var d = camera.position.distanceTo(c.position);
+        if (d < bestDist3) { bestDist3 = d; bestGroup = c; }
+      }
+    });
+    if (bestGroup) {
+      hoveredHistoryGroup = bestGroup;
+      if (!historyBtnHovered) { historyBtnHovered = true; updateInteractionHint(true, "history"); }
+      return;
+    }
+    historyBtnHovered = false; hoveredHistoryGroup = null;
+    if (!buttonHovered && !benchHovered) updateInteractionHint(false);
+    return;
+  }
+
   raycaster.setFromCamera(screenCenter, camera);
   var allMeshes = [];
   artGroup.traverse(function(c) {
