@@ -3276,6 +3276,17 @@ function resetGallery() {
     }
   }
   playWallSnapSound();
+  /* Stop all history animations */
+  while (historyAnims.length) stopHistoryAnim(0);
+  /* Close hidden door immediately */
+  if (doorPanel && doorPanelOrigY !== null) {
+    doorPanel.position.y = doorPanelOrigY;
+  }
+  doorOpen = false; doorAnimating = false; doorAnim = 0;
+  /* Clear explode particles */
+  explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
+  explodeParticles = [];
+  explodeActive = false; explodeResetTimer = 0;
   /* Reset time scale */
   timeScale = 1.0;
   var tss = $("timeSpeedSlider");
