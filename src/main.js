@@ -60,9 +60,9 @@ var linkPanelsVisible = false;
 var linkPanelGroup = null;
 
 var LINKS_DATA = [
-  { url: "https://www.normies.art/tools",                  label: "normie tools",    desc: "official normies tools" },
+  { url: "https://www.normies.art/tools",                  label: "normie tools",    desc: "community normies tools" },
   { url: "https://legacy.normies.art/normiecam",          label: "normie cam",      desc: "live webcam viewer" },
-  { url: "https://editnormies.com",                       label: "make gifs",       desc: "create & edit normie gifs" },
+  { url: "https://editnormies.com",                       label: "editnormies",     desc: "create and edit gifs" },
   { url: "https://normiegallery.netlify.app/",            label: "normie gallery",  desc: "trait-based gallery" },
   { url: "https://normie-map-production.up.railway.app/", label: "normie map",      desc: "holder world map" },
   { url: "https://normiesarchive.xyz/",                   label: "archive",         desc: "normies history archive" },
@@ -277,8 +277,8 @@ const sharedPlaceholderGeo = new THREE.BoxGeometry(2.32, 2.32, 0.04);
 
 /* ── Shared voxel material (compiled once — all art uses the same program) ── */
 const sharedVoxelMat = new THREE.MeshPhysicalMaterial({
-  color: "#060606", roughness: 0.04, metalness: 0.08,
-  clearcoat: 1.0, clearcoatRoughness: 0.03,
+  color: "#020202", roughness: 0.0, metalness: 0.10,
+  clearcoat: 1.0, clearcoatRoughness: 0.0,
 });
 /* White voxel material — used exclusively for the hidden-room #9098 display */
 const hiddenVoxelMat = new THREE.MeshPhysicalMaterial({
