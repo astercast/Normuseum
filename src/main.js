@@ -143,6 +143,7 @@ const renderer = new THREE.WebGLRenderer({
   canvas: canvasEl,
   antialias: true,
   powerPreference: "high-performance",
+  logarithmicDepthBuffer: true,
 });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
@@ -486,7 +487,7 @@ function buildRoom(ri) {
   }
 
   /* ── Thin baseboard — subtle, doesn't interfere with art ── */
-  [-WALL_X + 0.025, WALL_X - 0.025].forEach(function(x) {
+  [-WALL_X + 0.04, WALL_X - 0.04].forEach(function(x) {
     var sk = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, room.roomLen + 0.1), baseMat);
     sk.position.set(cx + x, 0.075, zMid); g.add(sk);
   });
@@ -1563,10 +1564,10 @@ function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
   southWall.rotation.y = Math.PI;
   southWall.position.set(aox, ALCOVE_H / 2, aoz + ALCOVE_L / 2); hg.add(southWall);
 
-  /* Door-frame pillars at the opening edges */
+  /* Door-frame pillars at the opening edges — offset 0.01 clear of wall plane to prevent Z-fighting */
   var pillarGeo = new THREE.BoxGeometry(0.18, ALCOVE_H, 0.18);
   [[aoz - ALCOVE_L / 2], [aoz + ALCOVE_L / 2]].forEach(function(pz) {
-    var p = new THREE.Mesh(pillarGeo, archMat); p.position.set(wallX + 0.09, ALCOVE_H / 2, pz[0]); hg.add(p);
+    var p = new THREE.Mesh(pillarGeo, archMat); p.position.set(wallX + 0.10, ALCOVE_H / 2, pz[0]); hg.add(p);
   });
 
   /* Warm spot light inside alcove */
