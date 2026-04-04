@@ -87,6 +87,7 @@ var benchPositions = [];
 
 /* ── Surface collision (stand on benches/podiums) ─────────────────────────── */
 var surfaceBoxes = [];  /* { minX, maxX, minZ, maxZ, topY } */
+var blockBoxes   = [];  /* { minX, maxX, minZ, maxZ } — solid XZ obstacles at floor level */
 
 /* ── Volume controls ──────────────────────────────────────────────────────── */
 var musicVolume = 0.25;
@@ -577,13 +578,16 @@ function buildRoom(ri) {
   /* ── Bench — ebonised steel + stone seat ── */
   if (room.slotsPerSide >= 3) {
     var bench = buildBench(); bench.position.set(cx, 0, zMid); g.add(bench);
-    /* Bench surface collision box (seat top at y ≈ 0.52) */
+    /* Bench surface collision box (seat top at y = 0.52, camera eye at +1.7) */
     surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: zMid - 0.27, maxZ: zMid + 0.27, topY: 0.52 + 1.7 });
+    /* Bench XZ block — prevents walking through legs/frame at floor level */
+    blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: zMid - 0.31, maxZ: zMid + 0.31 });
     /* Second bench further back for large rooms */
     if (room.roomLen > 22) {
       var bench2 = buildBench(); var bz2 = zMid - room.roomLen * 0.22;
       bench2.position.set(cx, 0, bz2); g.add(bench2);
       surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: bz2 - 0.27, maxZ: bz2 + 0.27, topY: 0.52 + 1.7 });
+      blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: bz2 - 0.31, maxZ: bz2 + 0.31 });
     }
   }
 
@@ -916,6 +920,7 @@ function buildMuseum(totalCount) {
   clearArt();
   benchPositions = [];
   surfaceBoxes = [];
+  blockBoxes = [];
   droppedArts = [];
   podiumBtnMesh = null;
   secretBtnMesh = null;
@@ -1968,13 +1973,19 @@ function buildOrange() {
 var raycaster = new THREE.Raycaster(); raycaster.far = 3.5;
 var screenCenter = new THREE.Vector2(0, 0);
 
-/* ── Links floor button check ─────────────────────────────────────────────── */
+/* ── Links button check — raycast (must be looking at it) ─────────────────── */
 function checkLinksBtnInteraction() {
   if (!inMuseum || !linksBtnMesh) { linksBtnHovered = false; return; }
   var wp = new THREE.Vector3();
   linksBtnMesh.getWorldPosition(wp);
   var prev = linksBtnHovered;
-  linksBtnHovered = camera.position.distanceTo(wp) < 2.5;
+  if (camera.position.distanceTo(wp) < 4.0) {
+    raycaster.setFromCamera(screenCenter, camera);
+    var hits = raycaster.intersectObject(linksBtnMesh, false);
+    linksBtnHovered = hits.length > 0;
+  } else {
+    linksBtnHovered = false;
+  }
   if (linksBtnHovered && !prev) updateInteractionHint(true, "links");
   if (!linksBtnHovered && prev && !buttonHovered && !historyBtnHovered) updateInteractionHint(false);
 }
@@ -3355,19 +3366,39 @@ if (isTouch) {
 
 /* ── AABB collision ───────────────────────────────────────────────────────── */
 function clampToWalkZones(px, pz) {
+  /* First clamp to valid walk area */
+  var result;
+  var inZone = false;
   for (var i = 0; i < walkZones.length; i++) {
     var z = walkZones[i];
-    if (px >= z.minX && px <= z.maxX && pz >= z.minZ && pz <= z.maxZ) return { x: px, z: pz };
+    if (px >= z.minX && px <= z.maxX && pz >= z.minZ && pz <= z.maxZ) { inZone = true; break; }
   }
-  var bestDist = Infinity, bestX = px, bestZ = pz;
-  for (var i = 0; i < walkZones.length; i++) {
-    var z = walkZones[i];
-    var cx = Math.max(z.minX, Math.min(z.maxX, px));
-    var cz = Math.max(z.minZ, Math.min(z.maxZ, pz));
-    var d = (cx - px) * (cx - px) + (cz - pz) * (cz - pz);
-    if (d < bestDist) { bestDist = d; bestX = cx; bestZ = cz; }
+  if (!inZone) {
+    var bestDist = Infinity, bestX = px, bestZ = pz;
+    for (var i = 0; i < walkZones.length; i++) {
+      var z = walkZones[i];
+      var cx2 = Math.max(z.minX, Math.min(z.maxX, px));
+      var cz2 = Math.max(z.minZ, Math.min(z.maxZ, pz));
+      var d = (cx2 - px) * (cx2 - px) + (cz2 - pz) * (cz2 - pz);
+      if (d < bestDist) { bestDist = d; bestX = cx2; bestZ = cz2; }
+    }
+    px = bestX; pz = bestZ;
   }
-  return { x: bestX, z: bestZ };
+  /* Then push out of any solid block boxes (bench legs, etc.) */
+  for (var bi = 0; bi < blockBoxes.length; bi++) {
+    var b = blockBoxes[bi];
+    if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
+      /* Push toward nearest face */
+      var dLeft  = px - b.minX, dRight = b.maxX - px;
+      var dFront = pz - b.minZ, dBack  = b.maxZ - pz;
+      var min4 = Math.min(dLeft, dRight, dFront, dBack);
+      if (min4 === dLeft)  px = b.minX;
+      else if (min4 === dRight) px = b.maxX;
+      else if (min4 === dFront) pz = b.minZ;
+      else                      pz = b.maxZ;
+    }
+  }
+  return { x: px, z: pz };
 }
 
 /* ── Movement ─────────────────────────────────────────────────────────────── */
@@ -3435,7 +3466,7 @@ function move(dt) {
     for (var si2 = 0; si2 < surfaceBoxes.length; si2++) {
       var sb2 = surfaceBoxes[si2];
       if (px2 >= sb2.minX && px2 <= sb2.maxX && pz2 >= sb2.minZ && pz2 <= sb2.maxZ) {
-        if (GROUND_Y >= sb2.topY - 0.1) {
+        if (GROUND_Y >= sb2.topY - 0.02) {  /* tight threshold — only stay on surface if already standing on it */
           floorY = Math.max(floorY, sb2.topY);
         }
       }
