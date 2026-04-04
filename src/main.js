@@ -99,9 +99,18 @@ var isDragging = false;
 var dragVelocity = new THREE.Vector3();
 var droppedArts = [];        /* { group, velocity, onGround } */
 
-/* ── Time scale ───────────────────────────────────────────────────────────── */
+/* ── Time scale + arms ────────────────────────────────────────────────────── */
 var timeScale = 1.0;
+var showArms = false;
 var showCrosshair = true;
+var walkSwing = 0;
+var idleSwing = 0;
+var grabAnim = 0;
+var armsGroup = new THREE.Group();
+var armRGroup = new THREE.Group();
+var armLGroup = new THREE.Group();
+var armRElbow = new THREE.Group();
+var armLElbow = new THREE.Group();
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -189,7 +198,25 @@ if (!isTouch) {
   camera.rotation.order = "YXZ";
 }
 
-
+/* ── Build voxel arms attached to camera ─────────────────────────────────── */
+(function buildArms() {
+  var armMat = new THREE.MeshStandardMaterial({ color: "#1a1818", roughness: 0.85 });
+  function makeArm(shoulder, elbow) {
+    var upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.13), armMat);
+    upper.position.set(0, 0, -0.065); shoulder.add(upper);
+    elbow.position.set(0, 0, -0.13);
+    var fore = new THREE.Mesh(new THREE.BoxGeometry(0.050, 0.058, 0.11), armMat);
+    fore.position.set(0, -0.018, -0.055); elbow.add(fore);
+    shoulder.add(elbow);
+  }
+  makeArm(armRGroup, armRElbow);
+  makeArm(armLGroup, armLElbow);
+  armRGroup.position.set( 0.21, -0.34, -0.30);
+  armLGroup.position.set(-0.21, -0.34, -0.30);
+  armsGroup.add(armRGroup); armsGroup.add(armLGroup);
+  armsGroup.visible = showArms;
+  camera.add(armsGroup);
+})();
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
 scene.add(new THREE.AmbientLight(0xffeedd, 0.32));
@@ -594,18 +621,31 @@ function buildRoom(ri) {
     surfaceBoxes.push({ minX: fp.x - 0.36, maxX: fp.x + 0.36, minZ: fp.z - 0.36, maxZ: fp.z + 0.36, topY: 1.08 + 1.7 });
   });
 
-  /* ── Secret door button + hidden room (room 0 only) ── */
+  /* ── Secret explode button — on the apple pedestal ── */
   if (ri === 0) {
+    var applePed = fruitPedestals.find(function(fp) { return fp.isApple; });
+    if (applePed) {
+      var sBtn = buildSecretButton();
+      var facingRight = applePed.side < 0;
+      sBtn.position.set(
+        facingRight ? 0.26 : -0.26,
+        0.62,
+        0
+      );
+      sBtn.rotation.y = facingRight ? -Math.PI / 2 : Math.PI / 2;
+      applePed.group.add(sBtn);
+      secretBtnMesh = sBtn.userData.btnMesh;
+    }
+
+    /* ── Secret door button + hidden room ── */
     var dbz = room.zStart - 6.0;
-    /* Door button — brass panel on right wall, just before the hidden gap */
     var dBtn = buildDoorButton();
     var dbx = cx + WALL_X - 0.018;
     dBtn.position.set(dbx, 2.0, room.zStart - 3.2);
-    dBtn.rotation.y = Math.PI / 2;  /* faces into room */
+    dBtn.rotation.y = Math.PI / 2;
     g.add(dBtn);
     doorBtnMesh = dBtn.userData.btnMesh;
 
-    /* Hidden alcove room — extends off the right wall */
     buildHiddenRoom(g, cx + WALL_X, dbz, ROOM_H);
   }
 
@@ -1556,19 +1596,6 @@ function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
 
   /* ── Quote text plaque below the art ── */
   buildQuotePlaque(hg, wallX + ALCOVE_W - 0.08, aoz, ALCOVE_H);
-
-  /* ── Explode button on a small pedestal inside the alcove ── */
-  var sPed = buildPedestal();
-  sPed.scale.set(0.6, 0.6, 0.6);
-  var sPedX = wallX + ALCOVE_W * 0.35;
-  var sPedZ = aoz + ALCOVE_L * 0.30;
-  sPed.position.set(sPedX, 0, sPedZ);
-  hg.add(sPed);
-  var sBtn = buildSecretButton();
-  sBtn.position.set(sPedX, 1.16 * 0.6 + 0.01, sPedZ);
-  sBtn.rotation.x = -Math.PI / 2;  /* button faces UP on pedestal top */
-  hg.add(sBtn);
-  secretBtnMesh = sBtn.userData.btnMesh;
 
   /* Door panel — thin wall section, perfectly flush, slides UP to open */
   var panelGeo = new THREE.BoxGeometry(0.04, ALCOVE_H, ALCOVE_L);
@@ -2680,6 +2707,13 @@ document.addEventListener("click", function(e) {
   });
   var tss = $("timeSpeedSlider");
   if (tss) tss.addEventListener("input", function() { timeScale = parseFloat(this.value); });
+  var armsEl = $("armsToggle");
+  if (armsEl) {
+    armsEl.checked = showArms;
+    armsEl.addEventListener("change", function() {
+      showArms = this.checked; armsGroup.visible = showArms && !isSitting;
+    });
+  }
   var xhEl = $("crosshairToggle");
   if (xhEl) {
     xhEl.checked = showCrosshair;
@@ -3060,7 +3094,44 @@ function easeOutBack(t) {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
+/* ── Arms tick ────────────────────────────────────────────────────────────── */
+function tickArms(dt) {
+  var visible = showArms && !isSitting;
+  armsGroup.visible = visible;
+  if (!visible) return;
 
+  var moving    = keys.w || keys.s || keys.a || keys.d;
+  var sprinting = moving && keys.shift;
+
+  if (moving) walkSwing += dt * (sprinting ? 10.5 : 7.8);
+  idleSwing += dt * 0.95;
+
+  var targetGrab = isDragging ? 1.0 : 0.0;
+  grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
+
+  var walkAmp = moving ? (sprinting ? 0.26 : 0.16) : 0;
+  var idleAmp = moving ? 0 : 0.038;
+
+  var swingR = Math.sin(walkSwing)           * walkAmp + Math.sin(idleSwing)       * idleAmp;
+  var swingL = Math.sin(walkSwing + Math.PI) * walkAmp + Math.sin(idleSwing + 0.7) * idleAmp;
+
+  var yBob = moving ? Math.sin(walkSwing * 2) * 0.009 : 0;
+
+  var zSplayR = -0.05 + Math.sin(walkSwing)           * walkAmp * 0.18;
+  var zSplayL =  0.05 - Math.sin(walkSwing + Math.PI) * walkAmp * 0.18;
+
+  armRGroup.position.set( 0.21, -0.34 + yBob, -0.30);
+  armLGroup.position.set(-0.21, -0.34 + yBob, -0.30);
+
+  armRGroup.rotation.x = swingR + grabAnim * (-0.32);
+  armLGroup.rotation.x = swingL;
+  armRGroup.rotation.z = zSplayR;
+  armLGroup.rotation.z = zSplayL;
+
+  var elbowBend = 0.40 + grabAnim * 0.20;
+  armRElbow.rotation.x = elbowBend;
+  armLElbow.rotation.x = elbowBend;
+}
 
 /* ── Reset gallery ────────────────────────────────────────────────────────── */
 function resetGallery() {
@@ -3121,6 +3192,7 @@ function animate() {
   tickExplode(dt);
   tickDoorAnim(dt);
   tickHintDismiss(dt);
+  tickArms(dt);
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
