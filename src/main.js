@@ -61,6 +61,11 @@ var imageCache    = new Map();  // tokenId → Uint8ClampedArray
 var metaCache     = new Map();  // tokenId → JSON
 var imageInFlight = new Map();  // tokenId → Promise — prevents concurrent duplicate fetches
 var metaInFlight  = new Map();  // tokenId → Promise
+var historyCache  = new Map();  // tokenId → { edits: [...] }
+
+/* ── History animation state ──────────────────────────────────────────────── */
+const NORMIES_ARCHIVE = "https://normiesarchive.xyz";
+var historyAnims = [];   // active history animations: { tokenId, group, frames[], frameIdx, elapsed, interval }
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -501,7 +506,7 @@ function buildRoom(ri) {
       fix.position.set(sp.fixtureX, ROOM_H - 0.13, tz); g.add(fix);
       var spot = new THREE.SpotLight(0xfff2d8, 2.4, 8.0, Math.PI / 8, 0.3, 1.5);
       spot.position.set(sp.fixtureX, ROOM_H - 0.22, tz);
-      spot.target.position.set(sp.targetX, 2.6, tz);
+      spot.target.position.set(sp.targetX, 3.2, tz);
       g.add(spot);
       g.add(spot.target);
     });
@@ -537,13 +542,13 @@ function buildRoom(ri) {
     new THREE.BoxGeometry(1.5, 0.5, 0.025),
     new THREE.MeshStandardMaterial({ color: "#d8cfc0", roughness: 0.35, metalness: 0.12 })
   );
-  plaqueBacking.position.set(cx + WALL_X - 1.8, ROOM_H - 0.55, room.zStart - 0.04);
+  plaqueBacking.position.set(cx + WALL_X - 1.8, 5.2, room.zStart - 0.04);
   plaqueBacking.rotation.y = Math.PI; g.add(plaqueBacking);
   var roomSign = new THREE.Mesh(
     new THREE.PlaneGeometry(1.44, 0.44),
     new THREE.MeshBasicMaterial({ map: roomTex, transparent: false })
   );
-  roomSign.position.set(cx + WALL_X - 1.8, ROOM_H - 0.55, room.zStart - 0.028);
+  roomSign.position.set(cx + WALL_X - 1.8, 5.2, room.zStart - 0.028);
   roomSign.rotation.y = Math.PI; g.add(roomSign);
 
   /* ── Art slot positions ── */
@@ -551,8 +556,8 @@ function buildRoom(ri) {
   var WO = ROOM_W / 2;
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
-    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
-    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 3.2, z), ry: Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 3.2, z), ry: -Math.PI / 2 });
   }
 
   /* ── Pedestal between every pair of artworks on the centre line ── */
@@ -886,6 +891,17 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   );
   label.position.set(0, -(ART_H / 2 + 0.36), 0.01); group.add(label);
 
+  /* History button for customized (edited) normies */
+  if (meta.customized) {
+    var hBtn = buildHistoryBtn(tokenId);
+    hBtn.position.set(0, -(ART_H / 2 + 0.62), 0.01);
+    hBtn.userData.isHistoryBtn = true;
+    hBtn.userData.historyTokenId = tokenId;
+    group.add(hBtn);
+    group.userData.hasHistory = true;
+    group.userData.tokenId = tokenId;
+  }
+
   group.userData.revealT = 0;
   group.userData.revealing = true;
   group.scale.set(0.001, 0.001, 0.001);
@@ -920,6 +936,8 @@ function dispose(obj) {
   });
 }
 function clearArt() {
+  /* Stop all running history animations first */
+  while (historyAnims.length) stopHistoryAnim(0);
   while (artGroup.children.length) {
     var c = artGroup.children[artGroup.children.length - 1]; artGroup.remove(c); dispose(c);
   }
@@ -929,6 +947,228 @@ function clearArt() {
 /* ── Frame yield helper ────────────────────────────────────────────────────── */
 function yieldToFrame() {
   return new Promise(function(resolve) { requestAnimationFrame(resolve); });
+}
+
+/* ── History: fetch all version frame images as RGBA arrays ───────────────── */
+async function fetchHistoryFrames(tokenId) {
+  try {
+    var r = await fetch(NORMIES_ARCHIVE + "/api/normie/" + tokenId + "/frames");
+    if (!r.ok) return null;
+    var data = await r.json();
+    if (!data || !data.frames || data.frames.length < 2) return null;
+    /* Each frame: { version, pixels } where pixels is base64-encoded 40×40 RGBA (6400 bytes) */
+    var frames = [];
+    for (var fi = 0; fi < data.frames.length; fi++) {
+      try {
+        var b64 = data.frames[fi].pixels;
+        var bin = atob(b64);
+        var arr = new Uint8ClampedArray(bin.length);
+        for (var bi = 0; bi < bin.length; bi++) arr[bi] = bin.charCodeAt(bi);
+        frames.push(arr);
+      } catch (e) { /* skip bad frame */ }
+    }
+    return frames.length > 1 ? frames : null;
+  } catch (e) { return null; }
+}
+
+/* ── History: build a small "play history" button mesh ────────────────────── */
+function buildHistoryBtn(tokenId) {
+  var group = new THREE.Group();
+  group.userData.isHistoryBtn = true;
+  group.userData.historyTokenId = tokenId;
+
+  /* Pill-shaped backdrop */
+  var bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.52, 0.18),
+    new THREE.MeshStandardMaterial({ color: "#2a2820", roughness: 0.45, metalness: 0.1 })
+  );
+  group.add(bg);
+
+  /* Play triangle icon */
+  var triShape = new THREE.Shape();
+  triShape.moveTo(-0.028, -0.035);
+  triShape.lineTo(-0.028, 0.035);
+  triShape.lineTo(0.032, 0);
+  triShape.closePath();
+  var triGeo = new THREE.ShapeGeometry(triShape);
+  var tri = new THREE.Mesh(triGeo, new THREE.MeshBasicMaterial({ color: "#f0ebe0" }));
+  tri.position.set(-0.14, 0, 0.001);
+  group.add(tri);
+
+  /* "history" text label */
+  var labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 128; labelCanvas.height = 32;
+  var lctx = labelCanvas.getContext("2d");
+  lctx.clearRect(0, 0, 128, 32);
+  lctx.fillStyle = "#e8e0d2";
+  lctx.font = '500 18px "IBM Plex Mono", monospace';
+  lctx.textAlign = "left";
+  lctx.textBaseline = "middle";
+  lctx.fillText("history", 4, 16);
+  var labelTex = new THREE.CanvasTexture(labelCanvas);
+  labelTex.colorSpace = THREE.SRGBColorSpace;
+  var labelMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.32, 0.08),
+    new THREE.MeshBasicMaterial({ map: labelTex, transparent: true })
+  );
+  labelMesh.position.set(0.06, 0, 0.001);
+  group.add(labelMesh);
+
+  return group;
+}
+
+/* ── History: create voxel mesh from RGBA data (same logic as main artwork) ── */
+function buildVoxelFrame(rgbaData) {
+  var BG_LUM = 180, voxels = [];
+  for (var py = 0; py < GRID; py++) {
+    for (var px = 0; px < GRID; px++) {
+      var i = (py * GRID + px) * 4;
+      var rv = rgbaData[i], gv = rgbaData[i + 1], bv = rgbaData[i + 2], av = rgbaData[i + 3];
+      if (av < 10) continue;
+      var lum = 0.299 * rv + 0.587 * gv + 0.114 * bv;
+      if (lum > BG_LUM) continue;
+      voxels.push({
+        x: (px - GRID / 2 + 0.5) * CELL, y: (GRID / 2 - py - 0.5) * CELL,
+        r: rv / 255, g: gv / 255, b: bv / 255,
+        depth: 1.5 + (1 - lum / BG_LUM) * 4.5,
+      });
+    }
+  }
+  if (!voxels.length) return null;
+  var mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.06, vertexColors: true });
+  var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
+  var m4 = new THREE.Matrix4(), col = new THREE.Color();
+  var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
+  for (var vi = 0; vi < voxels.length; vi++) {
+    var v = voxels[vi];
+    posV.set(v.x, v.y, VOXEL_SIZE * v.depth / 2);
+    scaleV.set(1, 1, v.depth);
+    m4.compose(posV, quat, scaleV);
+    inst.setMatrixAt(vi, m4);
+    col.setRGB(v.r, v.g, v.b);
+    inst.setColorAt(vi, col);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  inst.castShadow = inst.receiveShadow = true;
+  inst.userData.isVoxel = true;
+  return inst;
+}
+
+/* ── History: build a flat plane from RGBA data ───────────────────────────── */
+function buildFlatFrame(rgbaData) {
+  var c = document.createElement("canvas");
+  c.width = GRID; c.height = GRID;
+  var ctx = c.getContext("2d");
+  var imgData = ctx.createImageData(GRID, GRID);
+  imgData.data.set(rgbaData);
+  ctx.putImageData(imgData, 0, 0);
+  var tex = new THREE.CanvasTexture(c);
+  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  var plane = new THREE.Mesh(
+    new THREE.PlaneGeometry(ART_W, ART_H),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.05 })
+  );
+  plane.userData.isFlat = true;
+  return plane;
+}
+
+/* ── History: start/stop playing animation on an art group ────────────────── */
+async function toggleHistoryAnim(artGroup3d, tokenId) {
+  /* If already playing on this group, stop it */
+  var existing = historyAnims.findIndex(function(a) { return a.tokenId === tokenId; });
+  if (existing >= 0) {
+    stopHistoryAnim(existing);
+    return;
+  }
+
+  /* Fetch frames */
+  var frames = await fetchHistoryFrames(tokenId);
+  if (!frames || frames.length < 2) return;
+
+  /* Pre-build all voxel + flat meshes for each frame */
+  var voxelMeshes = [], flatMeshes = [];
+  for (var fi = 0; fi < frames.length; fi++) {
+    voxelMeshes.push(buildVoxelFrame(frames[fi]));
+    flatMeshes.push(buildFlatFrame(frames[fi]));
+  }
+
+  /* Hide the original art children (voxel, flat, frame, backing) */
+  artGroup3d.traverse(function(child) {
+    if (child.userData && (child.userData.isVoxel || child.userData.isFlat || child.userData.isFrame)) {
+      child.visible = false;
+    }
+  });
+
+  /* Show first frame */
+  var showVoxel = !framesVisible;
+  var currentMesh = showVoxel ? voxelMeshes[0] : flatMeshes[0];
+  if (currentMesh) {
+    currentMesh.userData._historyAnim = true;
+    artGroup3d.add(currentMesh);
+  }
+
+  historyAnims.push({
+    tokenId: tokenId,
+    group: artGroup3d,
+    voxelMeshes: voxelMeshes,
+    flatMeshes: flatMeshes,
+    frameIdx: 0,
+    elapsed: 0,
+    interval: 0.8,  /* seconds per frame */
+  });
+}
+
+function stopHistoryAnim(animIdx) {
+  var anim = historyAnims[animIdx];
+  if (!anim) return;
+
+  /* Remove current animation mesh from group */
+  var toRemove = [];
+  anim.group.traverse(function(c) {
+    if (c.userData && c.userData._historyAnim) toRemove.push(c);
+  });
+  toRemove.forEach(function(c) { anim.group.remove(c); dispose(c); });
+
+  /* Dispose all pre-built meshes */
+  anim.voxelMeshes.forEach(function(m) { if (m) dispose(m); });
+  anim.flatMeshes.forEach(function(m) { if (m) dispose(m); });
+
+  /* Restore original art children visibility */
+  anim.group.traverse(function(child) {
+    if (!child.userData) return;
+    if (child.userData.isFrame || child.userData.isFlat) child.visible = framesVisible;
+    if (child.userData.isVoxel) child.visible = !framesVisible;
+  });
+
+  historyAnims.splice(animIdx, 1);
+}
+
+function tickHistoryAnims(dt) {
+  for (var ai = historyAnims.length - 1; ai >= 0; ai--) {
+    var anim = historyAnims[ai];
+    anim.elapsed += dt;
+    if (anim.elapsed < anim.interval) continue;
+    anim.elapsed -= anim.interval;
+
+    /* Remove old frame mesh */
+    var old = [];
+    anim.group.traverse(function(c) {
+      if (c.userData && c.userData._historyAnim) old.push(c);
+    });
+    old.forEach(function(c) { anim.group.remove(c); });
+    /* Don't dispose old meshes — they're reused from the array */
+
+    /* Advance frame (loop) */
+    anim.frameIdx = (anim.frameIdx + 1) % anim.voxelMeshes.length;
+    var showVoxel = !framesVisible;
+    var mesh = showVoxel ? anim.voxelMeshes[anim.frameIdx] : anim.flatMeshes[anim.frameIdx];
+    if (mesh) {
+      mesh.userData._historyAnim = true;
+      anim.group.add(mesh);
+    }
+  }
 }
 
 /* ── Prefetch (network only, no voxel building) ───────────────────────────── */
@@ -991,6 +1231,7 @@ async function loadRoomArt(ri) {
 
     var art = buildVoxelArtwork(tokens[idx], data[0], {
       type: data[1]?.type || "human", ap: data[1]?.actionPoints || null,
+      customized: !!data[1]?.customized,
     }, ri);
     art.position.copy(slot.pos); art.rotation.y = slot.ry;
     if (phs[idx]) { artGroup.remove(phs[idx]); dispose(phs[idx]); }
@@ -1176,6 +1417,8 @@ function buildPodium(ri) {
 /* ── Raycaster + interaction ──────────────────────────────────────────────── */
 var raycaster = new THREE.Raycaster(); raycaster.far = 3.5;
 var screenCenter = new THREE.Vector2(0, 0);
+var historyBtnHovered = false;
+var hoveredHistoryGroup = null;  /* the art group whose history btn is being aimed at */
 
 function getActivePodiumBtn() {
   if (currentRoomIdx < 0) return podiumBtnMesh;
@@ -1203,9 +1446,53 @@ function checkButtonInteraction() {
   if (hit !== buttonHovered) { buttonHovered = hit; updateInteractionHint(hit); }
 }
 
-function updateInteractionHint(show) {
+/* ── Check if aiming at a history button ──────────────────────────────────── */
+function checkHistoryInteraction() {
+  if (!inMuseum) {
+    if (historyBtnHovered) { historyBtnHovered = false; hoveredHistoryGroup = null; }
+    return;
+  }
+  raycaster.setFromCamera(screenCenter, camera);
+  var allMeshes = [];
+  artGroup.traverse(function(c) {
+    if (c.isMesh && c.parent && c.parent.userData && c.parent.userData.isHistoryBtn) {
+      allMeshes.push(c);
+    }
+  });
+  if (!allMeshes.length) {
+    if (historyBtnHovered) { historyBtnHovered = false; hoveredHistoryGroup = null; }
+    return;
+  }
+  var hits = raycaster.intersectObjects(allMeshes, false);
+  if (hits.length && hits[0].distance < 3.5) {
+    /* Walk up to find the art group (has userData.hasHistory) */
+    var p = hits[0].object;
+    while (p && !(p.userData && p.userData.hasHistory)) p = p.parent;
+    if (p) {
+      hoveredHistoryGroup = p;
+      if (!historyBtnHovered) {
+        historyBtnHovered = true;
+        updateInteractionHint(true, "history");
+      }
+      return;
+    }
+  }
+  historyBtnHovered = false;
+  hoveredHistoryGroup = null;
+  if (!buttonHovered && !benchHovered) updateInteractionHint(false);
+}
+
+function updateInteractionHint(show, mode) {
   var el = document.getElementById("interaction-hint");
-  if (el) el.classList.toggle("visible", show);
+  if (!el) return;
+  if (mode === "history") {
+    el.querySelector(".hint-desktop").textContent = "[E] play history";
+    el.querySelector(".hint-touch").textContent = "tap to play history";
+  } else {
+    el.querySelector(".hint-desktop").textContent = "[E] toggle frames";
+    el.querySelector(".hint-touch").textContent = "tap to toggle frames";
+  }
+  el.classList.toggle("visible", show);
 }
 
 function pressButton() {
@@ -1228,6 +1515,11 @@ function pressButton() {
 
 function tryInteract() {
   if (isSitting) { standUp(); return; }
+  if (historyBtnHovered && hoveredHistoryGroup) {
+    var tid = hoveredHistoryGroup.userData.tokenId;
+    toggleHistoryAnim(hoveredHistoryGroup, tid);
+    return;
+  }
   if (buttonHovered) { pressButton(); return; }
   if (benchHovered && nearBenchIdx >= 0) { sitDown(nearBenchIdx); return; }
 }
@@ -1933,7 +2225,9 @@ function animate() {
   if (shouldMove) move(dt);
   tickReveal(dt);
   checkButtonInteraction();
+  checkHistoryInteraction();
   checkBenchProximity();
+  tickHistoryAnims(dt);
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
