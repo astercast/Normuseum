@@ -1800,10 +1800,10 @@ function checkButtonInteraction() {
   }
   var hit = false;
   if (isTouch) {
-    /* On touch: proximity-based — no need to aim exactly */
+    /* On touch: show hint only when very close; E works from full range (3.5) */
     var wp = new THREE.Vector3();
     activeBtn.getWorldPosition(wp);
-    hit = camera.position.distanceTo(wp) < 3.5;
+    hit = camera.position.distanceTo(wp) < 2.0;
   } else {
     raycaster.setFromCamera(screenCenter, camera);
     var intersects = raycaster.intersectObject(activeBtn);
@@ -1835,7 +1835,7 @@ function checkDoorButtonInteraction() {
   if (isTouch) {
     var wp2 = new THREE.Vector3();
     doorBtnMesh.getWorldPosition(wp2);
-    hit = camera.position.distanceTo(wp2) < 3.0;
+    hit = camera.position.distanceTo(wp2) < 2.0;
   } else {
     raycaster.setFromCamera(screenCenter, camera);
     var hits = raycaster.intersectObject(doorBtnMesh, true);
@@ -1919,7 +1919,7 @@ function checkHistoryInteraction() {
 
   if (isTouch) {
     /* On touch: find nearest art group with history within range */
-    var bestDist3 = 3.5, bestGroup = null;
+    var bestDist3 = 2.0, bestGroup = null;  /* hint range: close only */
     artGroup.traverse(function(c) {
       if (c.userData && c.userData.hasHistory) {
         var d = camera.position.distanceTo(c.position);
@@ -2165,6 +2165,38 @@ function tryInteract() {
   }
   if (buttonHovered) { pressButton(); return; }
   if (benchHovered && nearBenchIdx >= 0) { sitDown(nearBenchIdx); return; }
+
+  /* Touch fallback: wider range (3.5u) for E/interact button even if hint isn't showing */
+  if (isTouch) {
+    /* Podium button */
+    var activeBtn2 = getActivePodiumBtn();
+    if (activeBtn2) {
+      var wp3 = new THREE.Vector3();
+      activeBtn2.getWorldPosition(wp3);
+      if (camera.position.distanceTo(wp3) < 3.5) { pressButton(); return; }
+    }
+    /* Door button */
+    if (doorBtnMesh) {
+      var wp4 = new THREE.Vector3();
+      doorBtnMesh.getWorldPosition(wp4);
+      if (camera.position.distanceTo(wp4) < 3.5) { pressDoorButton(); return; }
+    }
+    /* History art */
+    var bestD = 3.5, bestG = null;
+    artGroup.traverse(function(c) {
+      if (c.userData && c.userData.hasHistory) {
+        var d = camera.position.distanceTo(c.position);
+        if (d < bestD) { bestD = d; bestG = c; }
+      }
+    });
+    if (bestG) { toggleHistoryAnim(bestG, bestG.userData.tokenId); return; }
+    /* Secret explode button */
+    if (secretBtnMesh) {
+      var wp5 = new THREE.Vector3();
+      secretBtnMesh.getWorldPosition(wp5);
+      if (camera.position.distanceTo(wp5) < 2.5) { pressSecretButton(); return; }
+    }
+  }
 }
 
 function sitDown(bi) {
@@ -3187,7 +3219,10 @@ function tickDraggedArt(dt) {
 
 function tickDroppedArts(dt) {
   var PUSH_RADIUS = 0.88;
+  var ART_HALF    = 1.1;   /* approx. half-width used for wall/normie collision */
+  var CEIL_Y      = ROOM_H - ART_HALF;
   var camX = camera.position.x, camZ = camera.position.z;
+
   for (var di = droppedArts.length - 1; di >= 0; di--) {
     var da = droppedArts[di];
 
@@ -3204,14 +3239,54 @@ function tickDroppedArts(dt) {
     if (da.onGround) continue;
     da.velocity.y += GRAVITY * dt;
     da.group.position.addScaledVector(da.velocity, dt);
-    /* Cap lateral speed to prevent tunnelling */
-    var maxLat = 18;
+    /* Lower cap to prevent tunnelling through walls */
+    var maxLat = 12;
     if (Math.abs(da.velocity.x) > maxLat) da.velocity.x = Math.sign(da.velocity.x) * maxLat;
     if (Math.abs(da.velocity.z) > maxLat) da.velocity.z = Math.sign(da.velocity.z) * maxLat;
     /* Gentle spin while flying */
     var spinRate = (Math.abs(da.velocity.x) + Math.abs(da.velocity.z)) * 0.4;
     da.group.rotation.y += spinRate * dt;
-    /* Floor collision */
+
+    /* ── Find enclosing room for wall bounds ── */
+    var px = da.group.position.x, py = da.group.position.y, pz = da.group.position.z;
+    var roomMinX = -ROOM_W / 2 + ART_HALF, roomMaxX = ROOM_W / 2 - ART_HALF;
+    var roomMinZ = pz - 100, roomMaxZ = pz + 100;  /* fallback: no Z clamp */
+    for (var ri2 = 0; ri2 < rooms.length; ri2++) {
+      var rm = rooms[ri2];
+      if (pz >= rm.zEnd - 1.0 && pz <= rm.zStart + 1.0) {
+        roomMinX = rm.cx - ROOM_W / 2 + ART_HALF;
+        roomMaxX = rm.cx + ROOM_W / 2 - ART_HALF;
+        roomMinZ = rm.zEnd   + ART_HALF;
+        roomMaxZ = rm.zStart - ART_HALF;
+        break;
+      }
+    }
+
+    /* ── Wall bounce X ── */
+    if (px < roomMinX) {
+      da.group.position.x = roomMinX;
+      if (da.velocity.x < 0) { da.velocity.x = -da.velocity.x * 0.45; da.velocity.z *= 0.82; }
+    } else if (px > roomMaxX) {
+      da.group.position.x = roomMaxX;
+      if (da.velocity.x > 0) { da.velocity.x = -da.velocity.x * 0.45; da.velocity.z *= 0.82; }
+    }
+
+    /* ── Wall bounce Z ── */
+    if (pz < roomMinZ) {
+      da.group.position.z = roomMinZ;
+      if (da.velocity.z < 0) { da.velocity.z = -da.velocity.z * 0.45; da.velocity.x *= 0.82; }
+    } else if (pz > roomMaxZ) {
+      da.group.position.z = roomMaxZ;
+      if (da.velocity.z > 0) { da.velocity.z = -da.velocity.z * 0.45; da.velocity.x *= 0.82; }
+    }
+
+    /* ── Ceiling bounce ── */
+    if (py > CEIL_Y) {
+      da.group.position.y = CEIL_Y;
+      if (da.velocity.y > 0) da.velocity.y = -da.velocity.y * 0.30;
+    }
+
+    /* ── Floor collision ── */
     var floorLimit = ART_H / 2 + 0.01;
     if (da.group.position.y < floorLimit) {
       da.group.position.y = floorLimit;
@@ -3220,6 +3295,36 @@ function tickDroppedArts(dt) {
       da.velocity.x *= 0.75; da.velocity.z *= 0.75;
       if (bounceSpeed > 0.9) playDropFloorSound();
       if (Math.abs(da.velocity.y) < 0.3) { da.velocity.set(0, 0, 0); da.onGround = true; }
+    }
+  }
+
+  /* ── Normie-normie collision (XZ plane) ── */
+  var MIN_DIST = ART_W * 0.88;  /* ~2.1 units — just under art width */
+  for (var ai = 0; ai < droppedArts.length; ai++) {
+    for (var bi = ai + 1; bi < droppedArts.length; bi++) {
+      var a = droppedArts[ai], b = droppedArts[bi];
+      var cnx = b.group.position.x - a.group.position.x;
+      var cnz = b.group.position.z - a.group.position.z;
+      var cnd = Math.sqrt(cnx * cnx + cnz * cnz);
+      if (cnd < MIN_DIST && cnd > 0.001) {
+        var overlap = (MIN_DIST - cnd) * 0.5;
+        var ux = cnx / cnd, uz = cnz / cnd;
+        /* Push apart symmetrically */
+        a.group.position.x -= ux * overlap; a.group.position.z -= uz * overlap;
+        b.group.position.x += ux * overlap; b.group.position.z += uz * overlap;
+        /* Elastic-impulse along collision normal */
+        var relVx = b.velocity.x - a.velocity.x;
+        var relVz = b.velocity.z - a.velocity.z;
+        var relN  = relVx * ux + relVz * uz;
+        if (relN < 0) {  /* only resolve if approaching */
+          var imp = relN * 0.65;
+          a.velocity.x += imp * ux; a.velocity.z += imp * uz;
+          b.velocity.x -= imp * ux; b.velocity.z -= imp * uz;
+          /* Nudge off ground if bumped hard */
+          if (a.onGround && Math.abs(imp) > 0.6) { a.onGround = false; a.velocity.y += 0.5; }
+          if (b.onGround && Math.abs(imp) > 0.6) { b.onGround = false; b.velocity.y += 0.5; }
+        }
+      }
     }
   }
 }
