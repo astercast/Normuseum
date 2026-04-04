@@ -600,10 +600,15 @@ function buildRoom(ri) {
   var slotZStart = room.zStart - ROOM_PAD;
   /* Right-wall door exclusion zone for room 0 (door panel lives here) */
   var doorExclMinZ = room.zStart - 8.5, doorExclMaxZ = room.zStart - 3.5;
+  /* Left-wall links-button exclusion zone for room 0 */
+  var linksExclMinZ = room.zStart - 9.5, linksExclMaxZ = room.zStart - 4.5;
   /* Left wall (x = cx - WO + 0.05) and Right wall (x = cx + WO - 0.05) */
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
-    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
+    /* Skip left-wall slots that overlap the links button */
+    if (!(ri === 0 && z >= linksExclMinZ && z <= linksExclMaxZ)) {
+      room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
+    }
     /* Skip right-wall slots that overlap the hidden door panel */
     if (ri === 0 && z >= doorExclMinZ && z <= doorExclMaxZ) continue;
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
@@ -676,7 +681,7 @@ function buildRoom(ri) {
     buildHiddenRoom(g, cx + WALL_X, dbz, ROOM_H);
 
     /* ── Entrance title sign + links system ── */
-    buildRoomTitleSign(g, cx, room.zStart);
+    buildRoomTitleSign(g, cx, room.zEnd);
     buildLinksSystem(g, cx, room.zStart);
   }
 
@@ -1683,29 +1688,21 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
   }
 }
 
-/* ── "What is Art?" title sign for main room entrance wall ──────────────── */
-function buildRoomTitleSign(parentGroup, cx, zStart) {
-  var c = document.createElement("canvas"); c.width = 1200; c.height = 280;
+/* ── "What is Art?" title sign for main room back wall ──────────────── */
+function buildRoomTitleSign(parentGroup, cx, zEnd) {
+  /* Text painted directly on wall — no backing, transparent canvas */
+  var c = document.createElement("canvas"); c.width = 900; c.height = 180;
   var ctx = c.getContext("2d");
-  ctx.fillStyle = "#ebe3d2"; ctx.fillRect(0, 0, 1200, 280);
-  ctx.fillStyle = "#8c7c5c"; ctx.fillRect(50, 22, 1100, 3);
-  ctx.fillStyle = "#8c7c5c"; ctx.fillRect(50, 255, 1100, 3);
-  ctx.fillStyle = "#2a2420";
-  ctx.font = 'italic 400 88px Georgia, serif';
+  ctx.clearRect(0, 0, 900, 180);
+  ctx.fillStyle = "rgba(42,36,32,0.72)";
+  ctx.font = 'italic 400 58px Georgia, serif';
   ctx.textAlign = "center";
-  ctx.fillText("What is Art?", 600, 122);
-  ctx.font = 'italic 400 68px Georgia, serif';
-  ctx.fillText("What is an Agent?", 600, 218);
+  ctx.fillText("What is Art?  What is Agent?", 450, 80);
   var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-  var backing = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.98, 0.04),
-    new THREE.MeshStandardMaterial({ color: "#d4c9ae", roughness: 0.55, metalness: 0.12 }));
-  backing.position.set(cx, 5.4, zStart - 0.05);
-  backing.rotation.y = Math.PI;
-  parentGroup.add(backing);
-  var plane = new THREE.Mesh(new THREE.PlaneGeometry(4.1, 0.95),
-    new THREE.MeshBasicMaterial({ map: tex }));
-  plane.position.set(cx, 5.4, zStart - 0.07);
-  plane.rotation.y = Math.PI;
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.72),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.01 }));
+  plane.position.set(cx, 4.6, zEnd + 0.012);
+  plane.rotation.y = 0;
   parentGroup.add(plane);
 }
 
@@ -1739,52 +1736,67 @@ function buildLinkPanel(label, desc) {
 
 /* ── Links floor button + the whole panel cluster ─────────────────────────── */
 function buildLinksSystem(parentGroup, cx, zStart) {
-  /* Disc in the open floor centre-left — away from fruit pedestals (zStart-4 / zStart-5.5) */
-  var discGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.038, 32);
-  var discMat = new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.25, metalness: 0.55 });
-  var disc = new THREE.Mesh(discGeo, discMat);
-  var bx = cx - 1.0, bz = zStart - 7.0;
-  disc.position.set(bx, 0.019, bz);
-  disc.userData.isLinksBtn = true;
-  linksBtnMesh = disc;
-  parentGroup.add(disc);
+  /* Wall-mounted button on the left wall, at a comfortable height */
+  var WALL_X = ROOM_W / 2;
+  var bx = cx - WALL_X + 0.018;   /* flush with left wall surface */
+  var bz = zStart - 7.0;           /* mid-room depth, away from pedestals */
+  var by = 1.55;
 
-  /* "links" floating label above the disc */
-  var lc = document.createElement("canvas"); lc.width = 320; lc.height = 80;
+  /* Backing plate */
+  var plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.022, 0.16, 0.16),
+    new THREE.MeshStandardMaterial({ color: "#c8c0b4", roughness: 0.75, metalness: 0.04 })
+  );
+  plate.position.set(bx, by, bz);
+  plate.rotation.y = Math.PI / 2;
+  parentGroup.add(plate);
+
+  /* Button cylinder — protrudes from plate */
+  var btn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.038, 0.040, 0.030, 24),
+    new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.30, metalness: 0.55 })
+  );
+  btn.rotation.z = Math.PI / 2;  /* lay cylinder pointing outward from wall */
+  btn.position.set(bx + 0.026, by, bz);
+  btn.userData.isLinksBtn = true;
+  linksBtnMesh = btn;
+  parentGroup.add(btn);
+
+  /* "links" label painted on the wall above the button */
+  var lc = document.createElement("canvas"); lc.width = 320; lc.height = 72;
   var lctx = lc.getContext("2d");
-  lctx.fillStyle = "rgba(0,0,0,0)"; lctx.fillRect(0, 0, 320, 80);
-  lctx.fillStyle = "#8c7c5c";
-  lctx.font = '500 44px "IBM Plex Mono", monospace';
+  lctx.clearRect(0, 0, 320, 72);
+  lctx.fillStyle = "rgba(42,36,32,0.65)";
+  lctx.font = '500 42px "IBM Plex Mono", monospace';
   lctx.textAlign = "center";
-  lctx.fillText("links", 160, 56);
+  lctx.fillText("links", 160, 52);
   var ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace;
-  var lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.175),
-    new THREE.MeshBasicMaterial({ map: ltex, transparent: true }));
-  lbl.position.set(bx, 0.42, bz);
-  lbl.rotation.x = -Math.PI / 8;
+  var lbl = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.135),
+    new THREE.MeshBasicMaterial({ map: ltex, transparent: true, alphaTest: 0.01 }));
+  lbl.position.set(bx + 0.01, by + 0.16, bz);
+  lbl.rotation.y = Math.PI / 2;
   parentGroup.add(lbl);
 
-  /* 3×3 curved grid — panels arc around the disc, each column facing the viewer */
+  /* 3×3 curved grid — arc centred on the wall button, opening into the room */
   var pg = new THREE.Group();
   linkPanelMeshes = [];
   var COLS = 3, ROWS = 3;
-  var arcRadius  = 4.2;   /* cylinder radius for the curve */
-  var arcSpread  = 0.52;  /* half-angle of the 3-column arc (radians) — ~30° each side */
+  var arcRadius  = 4.0;
+  var arcSpread  = 0.48;  /* half-angle (~27° each side) */
   var rowSpacing = 0.82;
   var gridY      = 2.55;
-  /* Arc is centred on the disc; panels sit on the far side of the arc toward -Z */
   for (var li = 0; li < LINKS_DATA.length; li++) {
     var col = li % COLS;
     var row = Math.floor(li / COLS);
-    /* Angle from disc: -arcSpread (left col) → 0 (centre) → +arcSpread (right col) */
+    /* Angle sweeps around +X axis (into the room from the left wall) */
     var angle = -arcSpread + col * arcSpread;
-    var px = bx + Math.sin(angle) * arcRadius;
-    var pz = bz - Math.cos(angle) * arcRadius;
+    var px = bx + Math.cos(angle) * arcRadius;
+    var pz = bz + Math.sin(angle) * arcRadius;
     var py = gridY + (1 - row) * rowSpacing;
     var panel = buildLinkPanel(LINKS_DATA[li].label, LINKS_DATA[li].desc);
     panel.position.set(px, py, pz);
-    /* Each panel rotates to face the disc (viewer side) */
-    panel.rotation.y = angle;
+    /* Face each panel back toward the wall button */
+    panel.rotation.y = Math.PI / 2 + angle;
     pg.add(panel);
     linkPanelMeshes.push({ mesh: panel.userData.btnMesh, url: LINKS_DATA[li].url });
   }
