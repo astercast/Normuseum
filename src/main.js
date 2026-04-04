@@ -1814,17 +1814,23 @@ function buildLinksSystem(parentGroup, cx, zMid) {
   /* PlaneGeometry default faces +z (toward entrance) — no rotation needed */
   parentGroup.add(lbl);
 
-  /* ─ 3×3 curved arc — fans outward from podium toward the entrance */
+  /* ─ 1 centred header + 3×3 curved arc — fans away from entrance into the room */
   var pg = new THREE.Group();
   linkPanelMeshes = [];
-  var COLS = 3, ROWS = 3;
+  var COLS = 3;
   var arcRadius  = 4.0;
   var arcSpread  = 0.48;  /* half-angle (~27° each side) */
   var rowSpacing = 0.82;
   var gridY      = 2.55;
   for (var li = 0; li < LINKS_DATA.length; li++) {
-    var col = li % COLS;
-    var row = Math.floor(li / COLS);
+    var col, row;
+    if (li === 0) {
+      /* normie tools: centred above the 3×3 grid */
+      col = 1; row = -1;
+    } else {
+      col = (li - 1) % COLS;
+      row = Math.floor((li - 1) / COLS);
+    }
     /* Angle sweeps left–right, arc fans away from entrance (into the room) */
     var angle = -arcSpread + col * arcSpread;
     var px = podX + Math.sin(angle) * arcRadius;
