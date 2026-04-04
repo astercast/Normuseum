@@ -71,12 +71,6 @@ var surfaceBoxes = [];  /* { minX, maxX, minZ, maxZ, topY } */
 var musicVolume = 0.25;
 var sfxVolume = 0.5;
 
-/* ── Slurp sound ──────────────────────────────────────────────────────────── */
-var slurpAudio = null;
-var slurpCooldown = 0;
-var SLURP_DISTANCE = 1.6;
-var SLURP_COOLDOWN = 4;
-
 /* ── Caches ────────────────────────────────────────────────────────────────── */
 var imageCache    = new Map();  // tokenId → Uint8ClampedArray
 var metaCache     = new Map();  // tokenId → JSON
@@ -934,7 +928,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   }
 
   if (voxels.length) {
-    var mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.06, vertexColors: true });
+    var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
     var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
     var m4 = new THREE.Matrix4(), col = new THREE.Color();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
@@ -1122,7 +1116,7 @@ function buildVoxelFrame(rgbaData) {
     }
   }
   if (!voxels.length) return null;
-  var mat = new THREE.MeshStandardMaterial({ roughness: 0.4, metalness: 0.06, vertexColors: true });
+  var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
   var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
   var m4 = new THREE.Matrix4(), col = new THREE.Color();
   var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
@@ -2067,14 +2061,8 @@ function pressSecretButton() {
     var numVoxels = instMesh ? Math.min(instMesh.count, 200) : 40;
     var dummy = new THREE.Matrix4(), col = new THREE.Color();
     for (var vi = 0; vi < numVoxels; vi++) {
-      var voxMat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.06, transparent: true, opacity: 1.0 });
-      if (instMesh) {
-        instMesh.getMatrixAt(vi, dummy);
-        if (instMesh.instanceColor) { instMesh.getColorAt(vi, col); voxMat.color.copy(col); }
-        else voxMat.color.set("#c0b090");
-      } else {
-        voxMat.color.setHSL(Math.random() * 0.1 + 0.07, 0.3, 0.55);
-      }
+      var voxMat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03, transparent: true, opacity: 1.0 });
+      if (instMesh) { instMesh.getMatrixAt(vi, dummy); }
       var sz = VOXEL_SIZE * (1.4 + Math.random() * 1.2);
       var vox = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), voxMat);
       vox.position.copy(worldPos);
@@ -2098,7 +2086,7 @@ function pressSecretButton() {
     }
     /* Extra tiny debris for visual richness */
     for (var di2 = 0; di2 < 30; di2++) {
-      var dMat = new THREE.MeshStandardMaterial({ color: "#a09080", roughness: 0.6, transparent: true, opacity: 1.0 });
+      var dMat = new THREE.MeshPhysicalMaterial({ color: "#0a0a0a", roughness: 0.06, metalness: 0.08, clearcoat: 0.9, clearcoatRoughness: 0.05, transparent: true, opacity: 1.0 });
       var ds = VOXEL_SIZE * (0.5 + Math.random() * 0.8);
       var dv = new THREE.Mesh(new THREE.BoxGeometry(ds, ds, ds), dMat);
       dv.position.copy(worldPos);
@@ -2867,7 +2855,6 @@ if (sfxSlider) {
   sfxSlider.value = sfxVolume * 100;
   sfxSlider.addEventListener("input", function() {
     sfxVolume = this.value / 100;
-    if (slurpAudio) slurpAudio.volume = sfxVolume * 0.25;
   });
 }
 document.addEventListener("click", function(e) {
@@ -2913,27 +2900,6 @@ document.addEventListener("click", function(e) {
     });
   }
 })();
-
-/* ── Slurp sound near art ─────────────────────────────────────────────────── */
-function initSlurp() { if (slurpAudio) return; slurpAudio = new Audio("./slurp.mp3"); slurpAudio.volume = sfxVolume * 0.25; }
-function checkSlurpProximity(dt) {
-  if (slurpCooldown > 0) { slurpCooldown -= dt; return; }
-  var px = camera.position.x, pz = camera.position.z;
-  for (var i = 0; i < artGroup.children.length; i++) {
-    var a = artGroup.children[i];
-    if (!a.userData || a.userData.revealT === undefined) continue;
-    if (a.userData.revealing) continue;
-    var dx = px - a.position.x, dz = pz - a.position.z;
-    var d = Math.sqrt(dx * dx + dz * dz);
-    if (d < SLURP_DISTANCE) {
-      initSlurp();
-      slurpAudio.currentTime = 0;
-      slurpAudio.play().catch(function() {});
-      slurpCooldown = SLURP_COOLDOWN;
-      return;
-    }
-  }
-}
 
 /* ── Pointer lock (desktop) ───────────────────────────────────────────────── */
 if (!isTouch && controls) {
@@ -3469,7 +3435,6 @@ function animate() {
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
-    checkSlurpProximity(dt);
   }
   renderer.render(scene, camera);
 }
