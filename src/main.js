@@ -1724,39 +1724,51 @@ function buildFruitPedestals(ri, cx, zStart, zEnd, wallHalf) {
   return results;
 }
 
-/* ── Emoji sprite helper ───────────────────────────────────────────────────── */
-function buildEmojiSprite(emoji) {
-  var size = 256;
-  var c = document.createElement("canvas"); c.width = size; c.height = size;
-  var ctx = c.getContext("2d");
-  ctx.clearRect(0, 0, size, size);
-  ctx.font = Math.round(size * 0.72) + "px serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(emoji, size / 2, size / 2 + size * 0.04);
-  var tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  var mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true });
-  var sprite = new THREE.Sprite(mat);
-  sprite.scale.set(0.30, 0.30, 0.30);
-  return sprite;
-}
-
-/* ── Apple (emoji sprite) ─────────────────────────────────────────────────── */
+/* ── Apple (green, leaf to the side like emoji) ───────────────────────────── */
 function buildApple() {
   var g = new THREE.Group();
-  var sprite = buildEmojiSprite("\uD83C\uDF4E");
-  sprite.position.y = 0.15;
-  g.add(sprite);
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.11, 16, 14),
+    new THREE.MeshPhysicalMaterial({ color: "#4a8c2a", roughness: 0.35, metalness: 0.04,
+      clearcoat: 0.6, clearcoatRoughness: 0.1 })
+  );
+  body.scale.set(1, 1.08, 1);
+  body.position.y = 0.11; g.add(body);
+  /* Stem — slightly angled */
+  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.06, 6),
+    new THREE.MeshStandardMaterial({ color: "#3a2010", roughness: 0.7 }));
+  stem.position.set(0.01, 0.227, 0);
+  stem.rotation.z = -0.18;
+  g.add(stem);
+  /* Leaf — angled out to the right like emoji */
+  var leafShape = new THREE.Shape();
+  leafShape.ellipse(0, 0, 0.038, 0.018, 0, Math.PI * 2);
+  var leafGeo = new THREE.ShapeGeometry(leafShape);
+  var leaf = new THREE.Mesh(leafGeo, new THREE.MeshStandardMaterial({ color: "#2e7020", roughness: 0.6, side: THREE.DoubleSide }));
+  leaf.position.set(0.038, 0.248, 0);
+  leaf.rotation.z = -0.55;
+  g.add(leaf);
   return g;
 }
 
-/* ── Orange (emoji sprite) ────────────────────────────────────────────────── */
+/* ── Orange mesh ──────────────────────────────────────────────────────────── */
 function buildOrange() {
   var g = new THREE.Group();
-  var sprite = buildEmojiSprite("\uD83C\uDF4A");
-  sprite.position.y = 0.15;
-  g.add(sprite);
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.115, 18, 14),
+    new THREE.MeshPhysicalMaterial({ color: "#e07020", roughness: 0.55, metalness: 0.0,
+      clearcoat: 0.2, clearcoatRoughness: 0.35 })
+  );
+  body.scale.set(1, 0.94, 1);
+  body.position.y = 0.115; g.add(body);
+  /* Navel dimple */
+  var navel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.006, 8),
+    new THREE.MeshStandardMaterial({ color: "#7a4010", roughness: 0.9 }));
+  navel.position.y = 0.222; g.add(navel);
+  /* Stem */
+  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.005, 0.04, 6),
+    new THREE.MeshStandardMaterial({ color: "#3a2c10", roughness: 0.7 }));
+  stem.position.y = 0.235; g.add(stem);
   return g;
 }
 
