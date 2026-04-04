@@ -60,6 +60,7 @@ var linkPanelsVisible = false;
 var linkPanelGroup = null;
 
 var LINKS_DATA = [
+  { url: "https://www.normies.art/tools",                  label: "normie tools",    desc: "official normies tools" },
   { url: "https://legacy.normies.art/normiecam",          label: "normie cam",      desc: "live webcam viewer" },
   { url: "https://editnormies.com",                       label: "make gifs",       desc: "create & edit normie gifs" },
   { url: "https://normiegallery.netlify.app/",            label: "normie gallery",  desc: "trait-based gallery" },
@@ -1002,6 +1003,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   var flatTex = new THREE.CanvasTexture(flatCanvas);
   flatTex.magFilter = THREE.NearestFilter; flatTex.minFilter = THREE.NearestFilter;
   flatTex.colorSpace = THREE.SRGBColorSpace;
+  renderer.initTexture(flatTex);  /* pre-upload to GPU immediately — avoids stutter on first toggle */
   var flatPlane = new THREE.Mesh(
     new THREE.PlaneGeometry(ART_W, ART_H),
     new THREE.MeshStandardMaterial({ map: flatTex, roughness: 0.6, metalness: 0.05 })
@@ -1685,8 +1687,6 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     artGroup2.rotation.y = -Math.PI / 2;
     artGroup2.position.set(wallX - 0.06, roomH * 0.42, centerZ);
     parentGroup.add(artGroup2);
-    /* Pre-compile shaders while hidden so first-reveal has no stutter */
-    requestAnimationFrame(function() { renderer.compile(scene, camera); });
   }
 }
 
