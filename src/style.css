@@ -592,6 +592,25 @@ body::before {
   opacity: 1;
   visibility: visible;
 }
+/* Close button only shown in mobile fullscreen mode */
+#helpPanelClose {
+  display: none;
+  position: sticky;
+  top: 0;
+  left: 0;
+  align-self: flex-end;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 4px 12px;
+  cursor: pointer;
+  pointer-events: all;
+  margin-bottom: 8px;
+  z-index: 10;
+}
+body.touch-device #helpPanelClose { display: block; }
 .help-section-title {
   font-size: 9px;
   font-weight: 600;
@@ -754,9 +773,26 @@ body.touch-device .interaction-hint {
   will-change: transform;
 }
 body.touch-device #joystick-base { display: flex; }
-body.touch-device #helpPanel     { display: none; }
-body.touch-device #helpBtn       { display: none; }
 body.touch-device #crosshair     { display: none; }
+
+/* On touch, helpPanel becomes a fixed fullscreen modal */
+body.touch-device #helpPanel {
+  position: fixed;
+  inset: 0;
+  bottom: auto;
+  right: auto;
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  z-index: 200;
+  border: none;
+  border-radius: 0;
+  padding: 24px 20px 40px;
+  gap: 8px;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* ── Touch action buttons (jump / interact / grab) ───────────────────────── */
 .touch-action-btn {
@@ -928,6 +964,11 @@ body.touch-device .touch-action-btn { display: flex; }
   .feature-desc { font-size: 11px; }
   #helpPanel { display: none; }
   #helpBtn   { display: none; }
+  /* HUD bar: shrink brand + meta, keep buttons reachable */
+  #hud-bar   { gap: 8px; padding: 0 10px; }
+  .hud-brand { font-size: 10px; }
+  .hud-meta  { max-width: 25vw; font-size: 9px; }
+  .hud-exit  { padding: 0 8px; font-size: 9px; }
   .about-page { padding: 0 16px; }
   .about-content { padding: 24px 0; }
   .about-title { font-size: 26px; }

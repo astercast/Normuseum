@@ -1886,7 +1886,7 @@ function playDoorSound(opening) {
   osc.type = "sawtooth";
   osc.frequency.setValueAtTime(opening ? 55 : 80, now);
   osc.frequency.linearRampToValueAtTime(opening ? 80 : 40, now + 0.5);
-  gain.gain.setValueAtTime(0.07, now);
+  gain.gain.setValueAtTime(sfxVolume * 0.07, now);
   gain.gain.linearRampToValueAtTime(0, now + 0.55);
   osc.connect(gain); gain.connect(audioCtx.destination);
   osc.start(now); osc.stop(now + 0.6);
@@ -1895,7 +1895,7 @@ function playDoorSound(opening) {
   var gain2 = audioCtx.createGain();
   osc2.type = "square";
   osc2.frequency.setValueAtTime(320, now);
-  gain2.gain.setValueAtTime(0.04, now);
+  gain2.gain.setValueAtTime(sfxVolume * 0.04, now);
   gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
   osc2.connect(gain2); gain2.connect(audioCtx.destination);
   osc2.start(now); osc2.stop(now + 0.1);
@@ -2179,7 +2179,7 @@ function playExplodeSound() {
     osc.type = i < 3 ? "sawtooth" : "square";
     osc.frequency.setValueAtTime(freq, now);
     osc.frequency.exponentialRampToValueAtTime(freq * 0.3, now + 0.6);
-    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.setValueAtTime(sfxVolume * 0.06, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5 + i * 0.05);
     osc.connect(gain); gain.connect(audioCtx.destination);
     osc.start(now + i * 0.01); osc.stop(now + 0.8);
@@ -2238,7 +2238,7 @@ function playButtonClick() {
   var osc = audioCtx.createOscillator(); var gain = audioCtx.createGain();
   osc.type = "square";
   osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(150, now + 0.04);
-  gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  gain.gain.setValueAtTime(sfxVolume * 0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
   osc.connect(gain); gain.connect(audioCtx.destination); osc.start(now); osc.stop(now + 0.06);
 }
 
@@ -2713,6 +2713,10 @@ var helpBtn = $("helpBtn");
 var helpPanel = $("helpPanel");
 if (helpBtn && helpPanel) {
   helpBtn.addEventListener("click", function() { helpPanel.classList.toggle("visible"); });
+}
+var helpPanelClose = $("helpPanelClose");
+if (helpPanelClose && helpPanel) {
+  helpPanelClose.addEventListener("click", function() { helpPanel.classList.remove("visible"); });
 }
 
 /* ── Theme toggle ─────────────────────────────────────────────────────────── */
