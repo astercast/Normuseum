@@ -104,10 +104,13 @@ var timeScale = 1.0;
 var showArms = true;
 var showCrosshair = true;
 var walkSwing = 0;
+var idleSwing = 0;
 var grabAnim = 0;
 var armsGroup = new THREE.Group();
 var armRGroup = new THREE.Group();
 var armLGroup = new THREE.Group();
+var armRElbow = new THREE.Group();
+var armLElbow = new THREE.Group();
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -155,14 +158,14 @@ renderer.shadowMap.type          = THREE.PCFSoftShadowMap;
 
 /* ── Scene ────────────────────────────────────────────────────────────────── */
 const scene = new THREE.Scene();
-scene.background = new THREE.Color("#ddd5c8");
-scene.fog = new THREE.FogExp2("#ddd5c8", 0.012);
+scene.background = new THREE.Color("#d4c9b8");
+scene.fog = new THREE.FogExp2("#d4c9b8", 0.011);
 
 /* ── Environment map (warm studio for PBR reflections) ────────────────────── */
 (function generateEnvironment() {
   var pmrem = new THREE.PMREMGenerator(renderer);
   var envScene = new THREE.Scene();
-  envScene.background = new THREE.Color("#e8dfd2");
+  envScene.background = new THREE.Color("#e2d5c0");
   var topLight = new THREE.DirectionalLight(0xfff8f0, 1.4);
   topLight.position.set(0, 10, 0);
   envScene.add(topLight);
@@ -198,11 +201,19 @@ if (!isTouch) {
 /* ── Build voxel arms attached to camera ─────────────────────────────────── */
 (function buildArms() {
   var armMat = new THREE.MeshStandardMaterial({ color: "#1a1818", roughness: 0.85 });
-  function makeArm(g) {
-    var sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.22), armMat);
-    sleeve.position.set(0, 0, -0.05); g.add(sleeve);
+  function makeArm(shoulder, elbow) {
+    /* Upper arm — shoulder to elbow */
+    var upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.13), armMat);
+    upper.position.set(0, 0, -0.065); shoulder.add(upper);
+    /* Elbow pivot lives at the far end of the upper arm */
+    elbow.position.set(0, 0, -0.13);
+    /* Forearm — elbow to wrist */
+    var fore = new THREE.Mesh(new THREE.BoxGeometry(0.050, 0.058, 0.11), armMat);
+    fore.position.set(0, -0.018, -0.055); elbow.add(fore);
+    shoulder.add(elbow);
   }
-  makeArm(armRGroup); makeArm(armLGroup);
+  makeArm(armRGroup, armRElbow);
+  makeArm(armLGroup, armLElbow);
   armRGroup.position.set( 0.21, -0.34, -0.30);
   armLGroup.position.set(-0.21, -0.34, -0.30);
   armsGroup.add(armRGroup); armsGroup.add(armLGroup);
@@ -210,40 +221,40 @@ if (!isTouch) {
 })();
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
-scene.add(new THREE.AmbientLight(0xfff2e8, 0.26));
-const sun = new THREE.DirectionalLight(0xfff0dd, 0.28);
+scene.add(new THREE.AmbientLight(0xffeedd, 0.32));
+const sun = new THREE.DirectionalLight(0xffe5c0, 0.36);
 sun.position.set(5, 14, 6);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.far = 60;
 sun.shadow.bias = -0.001;
 scene.add(sun);
-scene.add(new THREE.HemisphereLight(0xffe8d0, 0xb0a090, 0.18));
+scene.add(new THREE.HemisphereLight(0xffeedd, 0xb8a888, 0.24));
 
 /* ── Shared materials (upgraded PBR) ──────────────────────────────────────── */
 /* Palette: pale limestone walls, warm sand floor, dark slate accent, brushed brass trim */
 const floorMat = new THREE.MeshPhysicalMaterial({
-  color: "#c8bca4", roughness: 0.04, metalness: 0.06,
-  clearcoat: 0.8, clearcoatRoughness: 0.06, reflectivity: 0.78,
+  color: "#beb09a", roughness: 0.05, metalness: 0.06,
+  clearcoat: 0.85, clearcoatRoughness: 0.06, reflectivity: 0.80,
 });
-const wallMat      = new THREE.MeshStandardMaterial({ color: "#ede8df", roughness: 0.92 });
+const wallMat      = new THREE.MeshStandardMaterial({ color: "#ebe3d2", roughness: 0.92 });
 const accentWallMat= new THREE.MeshStandardMaterial({ color: "#2a2824", roughness: 0.85 }); /* dark feature wall */
-const panelMat     = new THREE.MeshStandardMaterial({ color: "#d6cdb8", roughness: 0.82 });
-const ceilMat      = new THREE.MeshStandardMaterial({ color: "#f0ece4", roughness: 0.96 });
-const mouldMat     = new THREE.MeshStandardMaterial({ color: "#b8b0a0", roughness: 0.35, metalness: 0.18 });
-const baseMat      = new THREE.MeshStandardMaterial({ color: "#b0a890", roughness: 0.5,  metalness: 0.08 });
+const panelMat     = new THREE.MeshStandardMaterial({ color: "#d4c9ae", roughness: 0.82 });
+const ceilMat      = new THREE.MeshStandardMaterial({ color: "#ede6d5", roughness: 0.96 });
+const mouldMat     = new THREE.MeshStandardMaterial({ color: "#b8ae98", roughness: 0.35, metalness: 0.20 });
+const baseMat      = new THREE.MeshStandardMaterial({ color: "#aea484", roughness: 0.5,  metalness: 0.10 });
 const frameMat     = new THREE.MeshStandardMaterial({ color: "#6a5c40", roughness: 0.22, metalness: 0.45 });
 const backMat      = new THREE.MeshStandardMaterial({ color: "#f2ede4", roughness: 0.95 });
 const placeMat     = new THREE.MeshStandardMaterial({ color: "#d8d0c4", roughness: 0.95 });
 const benchMat     = new THREE.MeshStandardMaterial({ color: "#1c1814", roughness: 0.45, metalness: 0.24 });
 const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#f0ebe0", roughness: 0.55, metalness: 0.02 }); /* pale stone seat */
 const corrFloorMat = new THREE.MeshPhysicalMaterial({
-  color: "#b4a888", roughness: 0.04, metalness: 0.1,
-  clearcoat: 0.7, clearcoatRoughness: 0.06, reflectivity: 0.78,
+  color: "#afa07c", roughness: 0.04, metalness: 0.1,
+  clearcoat: 0.75, clearcoatRoughness: 0.06, reflectivity: 0.80,
 });
-const archMat  = new THREE.MeshStandardMaterial({ color: "#c4bca8", roughness: 0.42, metalness: 0.14 });
+const archMat  = new THREE.MeshStandardMaterial({ color: "#bdb59c", roughness: 0.42, metalness: 0.14 });
 const inlayMat = new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.08, metalness: 0.48 }); /* brass inlay */
-const beamMat  = new THREE.MeshStandardMaterial({ color: "#e8e2d8", roughness: 0.78, metalness: 0.02 });
+const beamMat  = new THREE.MeshStandardMaterial({ color: "#e2d9c8", roughness: 0.78, metalness: 0.02 });
 const trimMat  = new THREE.MeshStandardMaterial({ color: "#a09080", roughness: 0.28, metalness: 0.38 }); /* brushed brass */
 const trackMat = new THREE.MeshStandardMaterial({ color: "#222018", roughness: 0.32, metalness: 0.72 }); /* matte black track */
 const pedestalMat = new THREE.MeshPhysicalMaterial({ color: "#d8d0c4", roughness: 0.18, metalness: 0.04,
@@ -608,10 +619,10 @@ function buildRoom(ri) {
       secretBtnMesh = sBtn.userData.btnMesh;
     }
 
-    /* ── Secret door button — right wall, mid-room ── */
+    /* ── Secret door button — right wall, just inside the entrance ── */
     var dBtn = buildDoorButton();
-    /* z is partway down the right wall, not overlapping art slots */
-    var dbz = room.zStart - room.roomLen * 0.68;
+    /* ~4.5 m from the entrance — player encounters it on their first walk-in */
+    var dbz = room.zStart - 4.5;
     var dbx = cx + WALL_X - 0.018;
     dBtn.position.set(dbx, 1.55, dbz);
     dBtn.rotation.y = Math.PI / 2;  /* faces into room (left) */
@@ -3069,23 +3080,44 @@ function tickArms(dt) {
   armsGroup.visible = visible;
   if (!visible) return;
 
-  /* Walking swing */
-  var moving = keys.w || keys.s || keys.a || keys.d;
-  if (moving) walkSwing += dt * 7.5;
+  var moving    = keys.w || keys.s || keys.a || keys.d;
+  var sprinting = moving && keys.shift;
+
+  /* Walk + idle clocks */
+  if (moving) walkSwing += dt * (sprinting ? 10.5 : 7.8);
+  idleSwing += dt * 0.95;
 
   /* Grab lerp */
   var targetGrab = isDragging ? 1.0 : 0.0;
   grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
 
-  /* Walking swing only — no grab lunge forward */
-  var swingAmp = moving ? 0.15 : 0;
-  var swingR =  Math.sin(walkSwing)            * swingAmp;
-  var swingL =  Math.sin(walkSwing + Math.PI)  * swingAmp;
+  /* Swing amplitudes */
+  var walkAmp = moving ? (sprinting ? 0.26 : 0.16) : 0;
+  var idleAmp = moving ? 0 : 0.038;
 
-  armRGroup.position.set( 0.21, -0.34, -0.30);
-  armLGroup.position.set(-0.21, -0.34, -0.30);
-  armRGroup.rotation.x = swingR;
+  var swingR = Math.sin(walkSwing)           * walkAmp + Math.sin(idleSwing)       * idleAmp;
+  var swingL = Math.sin(walkSwing + Math.PI) * walkAmp + Math.sin(idleSwing + 0.7) * idleAmp;
+
+  /* Subtle Y bob on each step (double-freq) */
+  var yBob = moving ? Math.sin(walkSwing * 2) * 0.009 : 0;
+
+  /* Slight outward Z lean that rocks with walk */
+  var zSplayR = -0.05 + Math.sin(walkSwing)           * walkAmp * 0.18;
+  var zSplayL =  0.05 - Math.sin(walkSwing + Math.PI) * walkAmp * 0.18;
+
+  armRGroup.position.set( 0.21, -0.34 + yBob, -0.30);
+  armLGroup.position.set(-0.21, -0.34 + yBob, -0.30);
+
+  /* Shoulder rotation: arm swing + right arm reaches forward when grabbing */
+  armRGroup.rotation.x = swingR + grabAnim * (-0.32);
   armLGroup.rotation.x = swingL;
+  armRGroup.rotation.z = zSplayR;
+  armLGroup.rotation.z = zSplayL;
+
+  /* Elbow bend: natural droop, tightens when grabbing */
+  var elbowBend = 0.40 + grabAnim * 0.20;
+  armRElbow.rotation.x = elbowBend;
+  armLElbow.rotation.x = elbowBend;
 }
 
 /* ── Reset gallery ────────────────────────────────────────────────────────── */
