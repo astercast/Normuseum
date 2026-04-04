@@ -277,8 +277,6 @@ function buildRoom(ri) {
   var cx = room.cx;
   var zMid = (room.zStart + room.zEnd) / 2;
   var WALL_X = ROOM_W / 2;
-  /* Alternate accent wall: even rooms = left wall dark, odd rooms = right wall dark */
-  var accentSide = (ri % 2 === 0) ? -1 : 1; /* -1 = left wall, +1 = right wall */
 
   /* ── Floor (polished limestone) ── */
   var floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), floorMat);
@@ -311,27 +309,11 @@ function buildRoom(ri) {
   var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, ROOM_H, zMid); g.add(ceil);
 
-  /* Ceiling coffers — shallow recessed grid */
-  var cofferCount = Math.max(2, Math.floor(room.roomLen / 5.5));
-  for (var bi = 0; bi < cofferCount; bi++) {
-    var bz = room.zStart - ROOM_PAD - (bi + 0.5) * ((room.roomLen - ROOM_PAD * 2) / cofferCount);
-    /* Main cross beam */
-    var bm = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.3, 0.1, 0.22), beamMat);
-    bm.position.set(cx, ROOM_H - 0.05, bz); g.add(bm);
-    /* Under-cove shadow strip */
-    var cove = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.3, 0.04, 0.04), mouldMat);
-    cove.position.set(cx, ROOM_H - 0.12, bz); g.add(cove);
-  }
-
-  /* ── Side walls ── */
+  /* ── Side walls — all warm limestone ── */
   var wallGeo = new THREE.PlaneGeometry(room.roomLen, ROOM_H);
-  /* Left wall — may be accent */
-  var lwMat = (accentSide === -1) ? accentWallMat : wallMat;
-  var lw = new THREE.Mesh(wallGeo, lwMat);
+  var lw = new THREE.Mesh(wallGeo, wallMat);
   lw.rotation.y = Math.PI / 2; lw.position.set(cx - WALL_X, ROOM_H / 2, zMid); lw.receiveShadow = true; g.add(lw);
-  /* Right wall — may be accent */
-  var rwMat = (accentSide === 1) ? accentWallMat : wallMat;
-  var rw = new THREE.Mesh(wallGeo, rwMat);
+  var rw = new THREE.Mesh(wallGeo, wallMat);
   rw.rotation.y = -Math.PI / 2; rw.position.set(cx + WALL_X, ROOM_H / 2, zMid); rw.receiveShadow = true; g.add(rw);
 
   /* ── End walls ── */
@@ -348,11 +330,9 @@ function buildRoom(ri) {
     buildDoorwayWall(g, cx, room.zEnd, 0, ROOM_W, ROOM_H);
   }
 
-  /* ── Wainscoting (only on light walls — accent wall is bare) ── */
+  /* ── Wainscoting on both side walls ── */
   var wainH = 1.05;
   [-WALL_X, WALL_X].forEach(function(x, idx) {
-    var thisAccent = (idx === 0) ? (accentSide === -1) : (accentSide === 1);
-    if (thisAccent) return; /* no wainscot on dark feature wall */
     var wainGeo = new THREE.PlaneGeometry(room.roomLen, wainH);
     var w = new THREE.Mesh(wainGeo, panelMat);
     w.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -410,23 +390,27 @@ function buildRoom(ri) {
     skyLight.position.set(cx, ROOM_H - 0.15, sz); g.add(skyLight);
   }
 
-  /* ── Ceiling track lighting — matte black rail with warm spots ── */
+  /* ── Ceiling track lighting ── */
   var slotZStart = room.zStart - ROOM_PAD;
   for (var si = 0; si < room.slotsPerSide; si++) {
     var tz = slotZStart - si * SLOT_SPACING;
-    /* Track rail runs wall-to-wall */
+    /* Track rail */
     var rail2 = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 1.0, 0.05, 0.06), trackMat);
     rail2.position.set(cx, ROOM_H - 0.04, tz); g.add(rail2);
-    /* Two spotlight cones — one per side — aimed at art height */
-    [-WALL_X + 1.0, WALL_X - 1.0].forEach(function(sx2) {
-      /* Fixture body */
+    /* Spotlights: one aimed at left wall art, one at right wall art */
+    var leftWallX  = cx - WALL_X + 0.12; /* surface of left wall */
+    var rightWallX = cx + WALL_X - 0.12; /* surface of right wall */
+    [
+      { fixtureX: cx - WALL_X + 1.0, targetX: leftWallX  },
+      { fixtureX: cx + WALL_X - 1.0, targetX: rightWallX },
+    ].forEach(function(sp) {
       var fix = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.18, 12), trackMat);
-      fix.position.set(cx + sx2, ROOM_H - 0.13, tz); g.add(fix);
-      /* Spot light — tight beam, warm white */
-      var spot = new THREE.SpotLight(0xfff2d8, 2.2, 8.0, Math.PI / 9, 0.28, 1.6);
-      spot.position.set(cx + sx2, ROOM_H - 0.22, tz);
-      spot.target.position.set(cx + sx2 * 0.85, 2.1, tz);
-      g.add(spot); g.add(spot.target);
+      fix.position.set(sp.fixtureX, ROOM_H - 0.13, tz); g.add(fix);
+      var spot = new THREE.SpotLight(0xfff2d8, 2.4, 8.0, Math.PI / 8, 0.3, 1.5);
+      spot.position.set(sp.fixtureX, ROOM_H - 0.22, tz);
+      spot.target.position.set(sp.targetX, 2.1, tz);
+      g.add(spot);
+      g.add(spot.target);
     });
   }
 
@@ -540,12 +524,14 @@ function unloadRoom(ri) {
 
   unloadRoomArt(ri);
 
-  /* When we're unloading room 0 (rare — only if ROOM_UNLOAD_RANGE rooms away),
-     clear the podiumBtnMesh so the raycaster doesn't reference stale geometry */
-  if (ri === 0) podiumBtnMesh = null;
+  /* Clear podiumBtnMesh if it belonged to this room */
+  if (podiumBtnMesh && podiumBtnMesh.userData && podiumBtnMesh.userData.roomIdx === ri) {
+    podiumBtnMesh = null;
+  }
 
   room.built = false;
   room.artSlots = [];
+  room.prefetching = false; /* allow prefetch again if room is rebuilt */
 }
 
 var sharedMats = [floorMat, wallMat, accentWallMat, panelMat, ceilMat, mouldMat, baseMat,
@@ -1099,22 +1085,18 @@ var raycaster = new THREE.Raycaster(); raycaster.far = 3.5;
 var screenCenter = new THREE.Vector2(0, 0);
 
 function getActivePodiumBtn() {
-  /* Find the podium button in the currently-built room the player is in */
+  if (currentRoomIdx < 0) return podiumBtnMesh;
+  /* Search the current room and immediate neighbours for a podium button */
   for (var ri = 0; ri < rooms.length; ri++) {
     if (!rooms[ri].built || !rooms[ri].group) continue;
-    var dist = Math.abs(ri - currentRoomIdx);
-    if (dist > 1) continue;
-    var g = rooms[ri].group;
-    for (var ci = 0; ci < g.children.length; ci++) {
-      var child = g.children[ci];
-      if (child.userData && child.userData.btnMesh) return child.userData.btnMesh;
-    }
-    /* Also check directly */
+    if (Math.abs(ri - currentRoomIdx) > 1) continue;
     var found = null;
-    g.traverse(function(c) { if (c.userData && c.userData.isButton) found = c; });
+    rooms[ri].group.traverse(function(c) {
+      if (!found && c.userData && c.userData.isButton) found = c;
+    });
     if (found) return found;
   }
-  return podiumBtnMesh;
+  return null;
 }
 
 function checkButtonInteraction() {
