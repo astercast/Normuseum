@@ -889,15 +889,43 @@ body.touch-device .touch-action-btn { display: flex; }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 540px) {
-  #landing { padding: 0 16px; }
-  .hero-title { font-size: 40px; }
+  /* Make the overlay scrollable so nothing clips */
+  #overlay { overflow-y: auto; }
+  /* Landing no longer vertically centers — flows naturally so it can scroll */
+  #landing {
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 28px 16px 32px;
+    min-height: auto;
+  }
   .hero-center { max-width: 100%; }
+  .hero-title { font-size: 40px; }
   .hero-sub { font-size: 12px; max-width: 100%; }
-  .input-group { flex-direction: column; border: none; }
-  #walletInput { border: 1px solid var(--border); }
-  #loadBtn { border: 1px solid var(--border); border-left: 1px solid var(--border); }
+  /* Input: stack wallet field above button, both same height */
+  .input-group {
+    flex-direction: column;
+    border: none;
+    gap: 8px;
+  }
+  #walletInput {
+    border: 1px solid var(--border);
+    height: 48px;
+    font-size: 13px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  #loadBtn {
+    border: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+    height: 48px;
+    font-size: 13px;
+    width: 100%;
+  }
+  /* Feature boxes stacked vertically */
   .hero-features { flex-direction: column; }
-  .feature-item { padding: 14px 12px; }
+  .feature-item { flex-direction: row; align-items: center; gap: 12px; padding: 14px 16px; justify-content: flex-start; text-align: left; }
+  .feature-label { font-size: 11px; }
+  .feature-desc { font-size: 11px; }
   #helpPanel { display: none; }
   #helpBtn   { display: none; }
   .about-page { padding: 0 16px; }
