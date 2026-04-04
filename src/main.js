@@ -116,6 +116,7 @@ var showCrosshair = true;
 var walkSwing = 0;
 var idleSwing = 0;
 var grabAnim = 0;
+var pushAnim = 0;  /* 0→1 spike on button press, decays → drives right-arm forward jab */
 var armsGroup = new THREE.Group();
 var armRGroup = new THREE.Group();
 var armLGroup = new THREE.Group();
@@ -1684,6 +1685,8 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     artGroup2.rotation.y = -Math.PI / 2;
     artGroup2.position.set(wallX - 0.06, roomH * 0.42, centerZ);
     parentGroup.add(artGroup2);
+    /* Pre-compile shaders while hidden so first-reveal has no stutter */
+    requestAnimationFrame(function() { renderer.compile(scene, camera); });
   }
 }
 
@@ -1824,32 +1827,32 @@ function buildLinksSystem(parentGroup, cx, zMid) {
 }
 
 function buildQuotePlaque(parentGroup, wallX, centerZ, roomH) {
-  var c = document.createElement("canvas"); c.width = 1100; c.height = 200;
+  var c = document.createElement("canvas"); c.width = 1400; c.height = 280;
   var ctx = c.getContext("2d");
   /* Dark background */
-  ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 1100, 200);
-  /* Subtle gold top rule */
-  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 20, 1040, 2);
-  ctx.fillStyle = "#6a5c30"; ctx.fillRect(30, 190, 1040, 2);
+  ctx.fillStyle = "#141210"; ctx.fillRect(0, 0, 1400, 280);
+  /* Subtle gold rules */
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(36, 24, 1328, 2);
+  ctx.fillStyle = "#6a5c30"; ctx.fillRect(36, 264, 1328, 2);
   /* Quote text */
   ctx.fillStyle = "#d8cdb0";
-  ctx.font = 'italic 400 40px Georgia, serif';
+  ctx.font = 'italic 400 54px Georgia, serif';
   ctx.textAlign = "center";
-  ctx.fillText("“Artists always tell you where the world is going,", 550, 76);
-  ctx.fillText("you just have to pay attention.”", 550, 128);
+  ctx.fillText("“Artists always tell you where the world is going,", 700, 102);
+  ctx.fillText("you just have to pay attention.”", 700, 172);
   /* Normie ID below */
   ctx.fillStyle = "#7a6e56";
-  ctx.font = '500 22px "IBM Plex Mono", monospace';
-  ctx.fillText("normie #9098", 550, 168);
+  ctx.font = '500 30px "IBM Plex Mono", monospace';
+  ctx.fillText("normie #9098", 700, 232);
   var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
 
   var plaqueGroup = new THREE.Group();
   /* Backing */
-  var backing = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.6, 2.2),
+  var backing = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.82, 2.9),
     new THREE.MeshStandardMaterial({ color: "#0e0c0a", roughness: 0.5 }));
   plaqueGroup.add(backing);
   /* Text plane */
-  var plane = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.56),
+  var plane = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.78),
     new THREE.MeshBasicMaterial({ map: tex }));
   plane.rotation.y = -Math.PI / 2;
   plane.position.x = -0.012;
@@ -1984,8 +1987,11 @@ function checkLinkPanelInteraction() {
   if (!linkPanelHovered && prev && !buttonHovered && !historyBtnHovered) updateInteractionHint(false);
 }
 
+function triggerHandPush() { pushAnim = 1.0; }
+
 function pressLinksBtn() {
   if (!linkPanelGroup) return;
+  triggerHandPush();
   linkPanelsVisible = !linkPanelsVisible;
   linkPanelGroup.visible = linkPanelsVisible;
   playButtonClick();
@@ -2072,6 +2078,7 @@ function checkDoorButtonInteraction() {
 /* ── Door open/close toggle ───────────────────────────────────────────────── */
 function pressDoorButton() {
   if (doorAnimating || !doorPanel) return;
+  triggerHandPush();
   doorOpen = !doorOpen;
   doorAnimating = true;
   /* Depress button briefly */
@@ -2232,6 +2239,7 @@ function tickHintDismiss(dt) {
 function pressButton() {
   var activeBtn = getActivePodiumBtn();
   if (!activeBtn || btnAnimating) return;
+  triggerHandPush();
   framesVisible = !framesVisible;
 
   /* Collect tokenIds that currently have a history animation playing */
@@ -3605,6 +3613,7 @@ function tickArms(dt) {
 
   var targetGrab = isDragging ? 1.0 : 0.0;
   grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
+  pushAnim = Math.max(0, pushAnim - dt * 6.0);  /* decay ~0.17s */
 
   var walkAmp = moving ? (sprinting ? 0.26 : 0.16) : 0;
   var idleAmp = moving ? 0 : 0.038;
@@ -3620,7 +3629,7 @@ function tickArms(dt) {
   armRGroup.position.set( 0.21, -0.34 + yBob, -0.30);
   armLGroup.position.set(-0.21, -0.34 + yBob, -0.30);
 
-  armRGroup.rotation.x = swingR + grabAnim * (-0.32);
+  armRGroup.rotation.x = swingR + grabAnim * (-0.32) + pushAnim * (-0.55);
   armLGroup.rotation.x = swingL;
   armRGroup.rotation.z = zSplayR;
   armLGroup.rotation.z = zSplayL;
