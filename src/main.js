@@ -301,6 +301,22 @@ scene.add(galleryGroup);
 const artGroup = new THREE.Group();
 scene.add(artGroup);
 
+/* ── Shader pre-warm dummies (scale 0 — never visible, force GPU compile at startup) ── */
+/* Without these, Three.js compiles shaders lazily on first visible frame → stutter.   */
+(function preWarmShaders() {
+  /* hiddenVoxelMat variant — used by #9098 hidden room InstancedMesh */
+  var d1 = new THREE.Mesh(sharedVoxelGeo, hiddenVoxelMat);
+  d1.scale.setScalar(0); scene.add(d1);
+  /* Flat-frame MeshStandardMaterial+map variant — used by all framed art pieces */
+  var dummyCanvas = document.createElement("canvas"); dummyCanvas.width = 1; dummyCanvas.height = 1;
+  var dummyTex = new THREE.CanvasTexture(dummyCanvas);
+  var d2 = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ map: dummyTex, roughness: 0.6, metalness: 0.05 })
+  );
+  d2.scale.setScalar(0); scene.add(d2);
+})();
+
 /* ── Multi-room state ─────────────────────────────────────────────────────── */
 var rooms = [];
 var walkZones = [];
