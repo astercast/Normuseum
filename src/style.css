@@ -226,7 +226,20 @@ body::before {
   letter-spacing: -0.04em;
   line-height: 0.92;
   color: var(--text);
-  margin-bottom: 18px;
+  margin-bottom: 8px;
+}
+
+.hero-mona {
+  font-family: var(--font-body);
+  font-size: 11px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+.hero-mona-abbr {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .hero-sub {
