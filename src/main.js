@@ -12,7 +12,7 @@ const VOXEL_SIZE       = 0.055;
 const GRID             = 40;
 const CELL             = 2.2 / GRID;
 const ART_W = 2.4, ART_H = 2.4;
-const ROOM_W = 14, ROOM_H = 5.2;
+const ROOM_W = 14, ROOM_H = 7.0;
 const SLOT_SPACING = 3.6;
 
 /* ── Multi-room layout ────────────────────────────────────────────────────── */
@@ -80,6 +80,13 @@ const aboutBtn      = $("aboutBtn");
 const homeBtn       = $("homeBtn");
 const themeToggle   = $("themeToggle");
 const fullscreenBtn = $("fullscreenBtn");
+
+/* ── Selection overlay refs ───────────────────────────────────────────────── */
+const selectionOverlay  = $("selection-overlay");
+const selectionGrid     = $("selectionGrid");
+const selectionCountEl  = $("selectionCount");
+const selectionLoadBtn2 = $("selectionLoadBtn");
+const selectionCancelBtn= $("selectionCancelBtn");
 
 /* ── Platform ─────────────────────────────────────────────────────────────── */
 const isTouch = ("ontouchstart" in window) || navigator.maxTouchPoints > 0;
@@ -247,20 +254,72 @@ function planLayout(totalCount) {
 var skyTexture = null;
 function getSkyTexture() {
   if (skyTexture) return skyTexture;
+  var W = 1024, H = 512;
   var c = document.createElement("canvas");
-  c.width = 512; c.height = 256;
+  c.width = W; c.height = H;
   var ctx = c.getContext("2d");
-  var grad = ctx.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, "#5da0d4"); grad.addColorStop(0.55, "#87c4eb"); grad.addColorStop(1, "#bde0f5");
-  ctx.fillStyle = grad; ctx.fillRect(0, 0, 512, 256);
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  [[80,120,90,40],[200,90,120,50],[350,130,80,35],[420,70,100,45],[150,160,70,30],[300,50,60,28]].forEach(function(p) {
-    ctx.beginPath(); ctx.ellipse(p[0], p[1], p[2], p[3], 0, 0, Math.PI * 2); ctx.fill();
+
+  /* Deep atmospheric sky gradient — deep cobalt → cerulean → warm champagne at horizon */
+  var grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0.00, "#1a5f9e");  /* deep cobalt zenith */
+  grad.addColorStop(0.30, "#3485c8");  /* cerulean */
+  grad.addColorStop(0.65, "#72b8e0");  /* sky blue mid */
+  grad.addColorStop(0.88, "#b0d8f0");  /* pale atmospheric */
+  grad.addColorStop(1.00, "#e8d8b8");  /* warm champagne horizon */
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, W, H);
+
+  /* Sun glow near horizon */
+  var sunGrad = ctx.createRadialGradient(W * 0.72, H * 0.92, 0, W * 0.72, H * 0.92, H * 0.4);
+  sunGrad.addColorStop(0.0, "rgba(255,235,180,0.55)");
+  sunGrad.addColorStop(0.5, "rgba(255,220,140,0.18)");
+  sunGrad.addColorStop(1.0, "rgba(255,200,100,0.00)");
+  ctx.fillStyle = sunGrad; ctx.fillRect(0, 0, W, H);
+
+  /* Realistic cumulus clouds — layered, soft */
+  function cloud(x, y, scale, alpha) {
+    ctx.save();
+    var cg = ctx.createRadialGradient(x, y, 0, x, y, 90 * scale);
+    cg.addColorStop(0.0, "rgba(255,253,248," + alpha + ")");
+    cg.addColorStop(0.6, "rgba(240,245,250," + (alpha * 0.7) + ")");
+    cg.addColorStop(1.0, "rgba(220,235,248,0)");
+    ctx.fillStyle = cg;
+    [
+      [x,      y,      90*scale, 55*scale],
+      [x-70*scale, y+12*scale, 70*scale, 48*scale],
+      [x+65*scale, y+8*scale,  60*scale, 44*scale],
+      [x-30*scale, y-20*scale, 60*scale, 40*scale],
+      [x+30*scale, y-15*scale, 55*scale, 38*scale],
+      [x-110*scale,y+20*scale, 50*scale, 36*scale],
+      [x+110*scale,y+18*scale, 48*scale, 34*scale],
+    ].forEach(function(e) {
+      ctx.beginPath(); ctx.ellipse(e[0], e[1], e[2], e[3], 0, 0, Math.PI*2); ctx.fill();
+    });
+    /* Shadow belly */
+    var sg = ctx.createLinearGradient(x, y - 40*scale, x, y + 60*scale);
+    sg.addColorStop(0, "rgba(0,0,0,0)");
+    sg.addColorStop(1, "rgba(140,155,175," + (alpha * 0.3) + ")");
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.ellipse(x, y + 20*scale, 80*scale, 40*scale, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  cloud(160,  95,  1.0, 0.92);
+  cloud(580, 105,  0.9, 0.88);
+  cloud(860,  80,  0.7, 0.84);
+  cloud(380,  68,  0.6, 0.80);
+  cloud(750, 150,  0.5, 0.76);
+  cloud(100, 170,  0.4, 0.70);
+  cloud(960, 185,  0.45,0.68);
+
+  /* High cirrus wisps */
+  ctx.globalAlpha = 0.32;
+  ctx.strokeStyle = "rgba(240,248,255,0.7)";
+  ctx.lineWidth = 3;
+  [[50,40,260,55],[300,28,180,42],[520,18,240,36],[720,32,160,28],[880,22,200,40]].forEach(function(l) {
+    ctx.beginPath(); ctx.moveTo(l[0], l[1]); ctx.quadraticCurveTo(l[0]+l[2]*0.5, l[1]-8, l[0]+l[2], l[3]);
+    ctx.stroke();
   });
-  ctx.fillStyle = "rgba(255,255,255,0.6)";
-  [[130,100,60,25],[260,110,50,22],[380,80,70,30]].forEach(function(p) {
-    ctx.beginPath(); ctx.ellipse(p[0], p[1], p[2], p[3], 0, 0, Math.PI * 2); ctx.fill();
-  });
+  ctx.globalAlpha = 1.0;
+
   skyTexture = new THREE.CanvasTexture(c);
   skyTexture.colorSpace = THREE.SRGBColorSpace;
   return skyTexture;
@@ -366,28 +425,62 @@ function buildRoom(ri) {
     sk2.position.set(cx + x, 0.3, zMid); g.add(sk2);
   });
 
-  /* ── Skylights — recessed coffers with glazing bars + cool fill ── */
-  var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture(), transparent: true, opacity: 0.92 });
+  /* ── Skylights — grand recessed lanterns with deep coffer surround ── */
+  var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture(), transparent: false });
   var skylightCount = Math.max(1, Math.floor(room.roomLen / 9));
   for (var ski = 0; ski < skylightCount; ski++) {
     var sz = room.zStart - ROOM_PAD - (ski + 0.5) * ((room.roomLen - ROOM_PAD * 2) / skylightCount);
-    /* Recessed box surround */
-    var surW = 3.8, surL = 2.0;
-    /* Pane */
-    var pane = new THREE.Mesh(new THREE.PlaneGeometry(surW - 0.18, surL - 0.18), skyMat);
-    pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.008, sz); g.add(pane);
-    /* Glazing bars */
-    var barMat2 = trimMat;
-    [[0, surL * 0.5, surW, 0.06, 0.05], [0, -surL * 0.5, surW, 0.06, 0.05],  /* long rails */
-     [-surW * 0.5, 0, 0.06, surL, 0.05], [surW * 0.5, 0, 0.06, surL, 0.05],   /* end caps */
-     [0, 0, surW, 0.05, 0.05], [-surW * 0.33, 0, 0.05, surL, 0.05], [surW * 0.33, 0, 0.05, surL, 0.05] /* dividers */
-    ].forEach(function(b) {
-      var bar = new THREE.Mesh(new THREE.BoxGeometry(b[2], b[4] * 2, b[3]), barMat2);
-      bar.position.set(cx + b[0], ROOM_H - 0.01, sz + b[1]); g.add(bar);
+    var surW = 5.2, surL = 2.8;
+    var cofferDepth = 0.28;  /* how far the lantern recesses into the ceiling */
+
+    /* Sky pane flush with ceiling underside */
+    var pane = new THREE.Mesh(new THREE.PlaneGeometry(surW - 0.22, surL - 0.22), skyMat);
+    pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.005, sz); g.add(pane);
+
+    /* Coffer walls — four sides of the recessed box */
+    var cofferMat = new THREE.MeshStandardMaterial({ color: "#f5f0ea", roughness: 0.88 });
+    var sides = [
+      /* [cx_offset, z_offset, rx, ry, w, h] */
+      [0,  -surL/2, 0,   0,         surW, cofferDepth],  /* near  */
+      [0,   surL/2, 0,   Math.PI,   surW, cofferDepth],  /* far   */
+      [-surW/2, 0, 0,  -Math.PI/2,  surL, cofferDepth],  /* left  */
+      [ surW/2, 0, 0,   Math.PI/2,  surL, cofferDepth],  /* right */
+    ];
+    sides.forEach(function(s) {
+      var p = new THREE.Mesh(new THREE.PlaneGeometry(s[4], s[5]), cofferMat);
+      p.rotation.set(s[2], s[3], 0);
+      p.position.set(cx + s[0], ROOM_H - cofferDepth/2, sz + s[1]);
+      g.add(p);
     });
-    /* Cool sky fill light */
-    var skyLight = new THREE.PointLight(0xd4eaff, 0.6, 13);
-    skyLight.position.set(cx, ROOM_H - 0.15, sz); g.add(skyLight);
+
+    /* Glazing bars — elegant bronze grid (3×5) */
+    var barMat2 = trimMat;
+    /* Longitudinal rails */
+    [-surL/2, 0, surL/2].forEach(function(oz) {
+      var bar = new THREE.Mesh(new THREE.BoxGeometry(surW, 0.04, 0.055), barMat2);
+      bar.position.set(cx, ROOM_H - 0.012, sz + oz); g.add(bar);
+    });
+    /* Transverse mullions */
+    [-surW*0.4, -surW*0.15, surW*0.15, surW*0.4].forEach(function(ox) {
+      var bar = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.04, surL), barMat2);
+      bar.position.set(cx + ox, ROOM_H - 0.012, sz); g.add(bar);
+    });
+    /* Outer frame */
+    var frameMat3 = new THREE.MeshStandardMaterial({ color: "#8c7850", roughness: 0.15, metalness: 0.55 });
+    [[surW + 0.1, 0.07, surL + 0.1, 0]] /* perimeter channel */.forEach(function() {
+      var t = 0.065;
+      [[surW/2+t/2, 0, t, surL+t*2], [-surW/2-t/2, 0, t, surL+t*2],
+       [0,  surL/2+t/2, surW+t*2, t], [0, -surL/2-t/2, surW+t*2, t]].forEach(function(b) {
+        var rim = new THREE.Mesh(new THREE.BoxGeometry(b[2], 0.05, b[3]), frameMat3);
+        rim.position.set(cx + b[0], ROOM_H - 0.014, sz + b[1]); g.add(rim);
+      });
+    });
+    /* Sky fill — brighter RecArea-style fill from above */
+    var skyLight = new THREE.PointLight(0xb8d8f8, 1.0, 18);
+    skyLight.position.set(cx, ROOM_H - 0.2, sz); g.add(skyLight);
+    /* Warm bounce off floor */
+    var bounceLight = new THREE.PointLight(0xfff0d8, 0.22, 10);
+    bounceLight.position.set(cx, 1.2, sz); g.add(bounceLight);
   }
 
   /* ── Ceiling track lighting ── */
@@ -408,7 +501,7 @@ function buildRoom(ri) {
       fix.position.set(sp.fixtureX, ROOM_H - 0.13, tz); g.add(fix);
       var spot = new THREE.SpotLight(0xfff2d8, 2.4, 8.0, Math.PI / 8, 0.3, 1.5);
       spot.position.set(sp.fixtureX, ROOM_H - 0.22, tz);
-      spot.target.position.set(sp.targetX, 2.1, tz);
+      spot.target.position.set(sp.targetX, 2.6, tz);
       g.add(spot);
       g.add(spot.target);
     });
@@ -458,8 +551,8 @@ function buildRoom(ri) {
   var WO = ROOM_W / 2;
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
-    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.1, z), ry: Math.PI / 2 });
-    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.1, z), ry: -Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
   }
 
   /* ── Pedestal between every pair of artworks on the centre line ── */
@@ -1422,16 +1515,93 @@ async function loadMuseumForWallets(rawInput) {
     setBusy(false); return;
   }
 
-  buildMuseum(allTokenIds.length);
+  /* Let user pick which normies to display (max 10) */
+  setBusy(false);
+  showSelectionGrid(allTokenIds, addresses);
+}
+
+/* ── Normie selection grid ────────────────────────────────────────────────── */
+var _selAddresses = [];  /* saved for HUD label after entering */
+
+function showSelectionGrid(tokenIds, addresses) {
+  _selAddresses = addresses || [];
+  var MAX_SELECT = 10;
+  var selected = new Set();
+
+  selectionGrid.innerHTML = "";
+  selectionCountEl.textContent = "0 / " + MAX_SELECT + " selected";
+  selectionLoadBtn2.disabled = true;
+  selectionOverlay.classList.remove("selection-hidden");
+
+  /* Status line on the landing page */
+  setStatus(tokenIds.length + " normies found \u2014 pick up to " + MAX_SELECT);
+
+  /* Build all cards */
+  tokenIds.forEach(function(tokenId) {
+    var card = document.createElement("div");
+    card.className = "normie-card";
+    card.dataset.id = tokenId;
+
+    /* Image — direct URL avoids canvas download overhead for thumbnails */
+    var img = document.createElement("img");
+    img.className = "normie-img";
+    img.src = NORMIES_API + "/normie/" + tokenId + "/image.png";
+    img.alt = "#" + tokenId;
+    img.loading = "lazy";
+    img.width = 120; img.height = 120;
+    card.appendChild(img);
+
+    var label = document.createElement("div");
+    label.className = "normie-card-label";
+    label.textContent = "#" + tokenId;
+    card.appendChild(label);
+
+    card.addEventListener("click", function() {
+      if (selected.has(tokenId)) {
+        selected.delete(tokenId);
+        card.classList.remove("selected");
+      } else {
+        if (selected.size >= MAX_SELECT) return;
+        selected.add(tokenId);
+        card.classList.add("selected");
+      }
+      /* Disable un-selected cards when limit reached */
+      var full = selected.size >= MAX_SELECT;
+      selectionGrid.querySelectorAll(".normie-card").forEach(function(c) {
+        if (!c.classList.contains("selected")) {
+          c.classList.toggle("disabled", full);
+        }
+      });
+      selectionCountEl.textContent = selected.size + " / " + MAX_SELECT + " selected";
+      selectionLoadBtn2.disabled = selected.size === 0;
+    });
+
+    selectionGrid.appendChild(card);
+  });
+
+  selectionLoadBtn2.onclick = function() {
+    if (selected.size === 0) return;
+    selectionOverlay.classList.add("selection-hidden");
+    enterWithSelection([...selected]);
+  };
+
+  selectionCancelBtn.onclick = function() {
+    selectionOverlay.classList.add("selection-hidden");
+    setStatus(tokenIds.length + " normies found.");
+  };
+}
+
+function enterWithSelection(selectedIds) {
+  allTokenIds = selectedIds;
+  buildMuseum(selectedIds.length);
   enterMuseum();
   if (!isTouch && controls) controls.lock();
-  setBusy(false);
 
-  var rc = rooms.length;
-  setStatus(allTokenIds.length + " normies across " + rc + " room" + (rc > 1 ? "s" : ""));
-  hudMetaEl.textContent = addresses.length === 1
-    ? addresses[0].slice(0, 8) + "\u2026" + addresses[0].slice(-5) + " \u00b7 " + allTokenIds.length + " normies"
-    : addresses.length + " wallets \u00b7 " + allTokenIds.length + " normies";
+  var walletStr = _selAddresses.length === 1
+    ? _selAddresses[0].slice(0, 8) + "\u2026" + _selAddresses[0].slice(-5)
+    : _selAddresses.length + " wallets";
+  setStatus(selectedIds.length + " normies in gallery");
+  hudMetaEl.textContent = walletStr + " \u00b7 " + selectedIds.length + " normies";
 
   currentRoomIdx = 0;
   checkRoomLoading();

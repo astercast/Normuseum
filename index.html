@@ -172,6 +172,24 @@
     <div id="crosshair"></div>
     <div id="joystick-base" aria-hidden="true"><div id="joystick-knob"></div></div>
 
+    <!-- NORMIE SELECTION GRID -->
+    <div id="selection-overlay" class="selection-overlay selection-hidden" aria-modal="true" role="dialog">
+      <div class="selection-panel">
+        <div class="selection-header">
+          <div class="selection-header-left">
+            <span class="selection-title">select normies</span>
+            <span class="selection-sub">choose up to 10 for your gallery</span>
+          </div>
+          <div class="selection-header-right">
+            <span class="selection-count" id="selectionCount">0 / 10 selected</span>
+            <button id="selectionCancelBtn" class="selection-cancel" type="button">cancel</button>
+            <button id="selectionLoadBtn" class="selection-load" type="button" disabled>open gallery →</button>
+          </div>
+        </div>
+        <div class="selection-grid" id="selectionGrid"></div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
