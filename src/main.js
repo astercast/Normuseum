@@ -60,7 +60,7 @@ var jumpVelocity = 0;
 var isJumping = false;
 var GRAVITY = -12;
 var JUMP_FORCE = 5.2;
-var GROUND_Y = 1.7;
+var GROUND_Y = 2.2;
 
 /* ── Bench sitting ────────────────────────────────────────────────────────── */
 var isSitting = false;
@@ -183,7 +183,7 @@ scene.fog = new THREE.FogExp2("#ddd5c8", 0.012);
 
 /* ── Camera ───────────────────────────────────────────────────────────────── */
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.05, 120);
-camera.position.set(0, 1.7, 2);
+camera.position.set(0, 2.2, 2);
 
 /* ── Controls ─────────────────────────────────────────────────────────────── */
 let controls = null;
@@ -548,8 +548,8 @@ function buildRoom(ri) {
   /* Left wall (x = cx - WO + 0.05) and Right wall (x = cx + WO - 0.05) */
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
-    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 3.2, z), ry: Math.PI / 2 });
-    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 3.2, z), ry: -Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 2.6, z), ry: Math.PI / 2 });
+    room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.6, z), ry: -Math.PI / 2 });
   }
   /* End walls — only use solid walls (no doorway).
      Front wall (zStart) is solid only for room 0.
@@ -561,18 +561,18 @@ function buildRoom(ri) {
       var ex = cx - endTotalW / 2 + ei * endSlotSpacing;
       if (ri === 0) {
         /* Solid front wall — face into the room */
-        room.artSlots.push({ pos: new THREE.Vector3(ex, 3.2, room.zStart - 0.05), ry: Math.PI });
+        room.artSlots.push({ pos: new THREE.Vector3(ex, 2.6, room.zStart - 0.05), ry: Math.PI });
       }
       if (ri === rooms.length - 1) {
         /* Solid back wall — face into the room */
-        room.artSlots.push({ pos: new THREE.Vector3(ex, 3.2, room.zEnd + 0.05), ry: 0 });
+        room.artSlots.push({ pos: new THREE.Vector3(ex, 2.6, room.zEnd + 0.05), ry: 0 });
       }
       /* For middle rooms, place on a side-panel next to the doorway lintel where there's solid wall */
       if (ri > 0 && ri < rooms.length - 1) {
         var doorW = CORR_W + 0.2;
         var panelX = cx - (doorW / 2 + ART_W / 2 + 0.3);
-        if (ei === 0) room.artSlots.push({ pos: new THREE.Vector3(panelX, 3.2, room.zStart - 0.05), ry: Math.PI });
-        else room.artSlots.push({ pos: new THREE.Vector3(cx + (doorW / 2 + ART_W / 2 + 0.3), 3.2, room.zStart - 0.05), ry: Math.PI });
+        if (ei === 0) room.artSlots.push({ pos: new THREE.Vector3(panelX, 2.6, room.zStart - 0.05), ry: Math.PI });
+        else room.artSlots.push({ pos: new THREE.Vector3(cx + (doorW / 2 + ART_W / 2 + 0.3), 2.6, room.zStart - 0.05), ry: Math.PI });
       }
     }
   }
@@ -846,7 +846,7 @@ function buildMuseum(totalCount) {
   buildRoom(0);
   if (rooms.length > 1) buildRoom(1);
 
-  if (rooms.length) camera.position.set(rooms[0].cx, 1.7, rooms[0].zStart - 2);
+  if (rooms.length) camera.position.set(rooms[0].cx, 2.2, rooms[0].zStart - 2);
 }
 
 /* ── Label texture ────────────────────────────────────────────────────────── */
@@ -1175,7 +1175,7 @@ async function toggleHistoryAnim(artGroup3d, tokenId) {
     flatMeshes: flatMeshes,
     frameIdx: 0,
     elapsed: 0,
-    interval: 0.8,  /* seconds per frame */
+    interval: 0.18,  /* seconds per frame */
   });
 }
 
@@ -2093,8 +2093,8 @@ function sitDown(bi) {
 
 function standUp() {
   isSitting = false;
-  GROUND_Y = 1.7;
-  camera.position.y = 1.7;
+  GROUND_Y = 2.2;
+  camera.position.y = 2.2;
   updateInteractionHint(false);
 }
 
@@ -2350,7 +2350,7 @@ function exitMuseum() {
   if (stateEl) stateEl.textContent = "off";
 
   inMuseum = false; currentRoomIdx = -1;
-  isSitting = false; isJumping = false; jumpVelocity = 0; GROUND_Y = 1.7;
+  isSitting = false; isJumping = false; jumpVelocity = 0; GROUND_Y = 2.2;
   /* Reset drag state */
   if (draggedArt) { scene.remove(draggedArt); dispose(draggedArt); draggedArt = null; }
   isDragging = false; dragVelocity.set(0, 0, 0);
@@ -2367,7 +2367,7 @@ function exitMuseum() {
   overlayEl.classList.remove("hidden");
   hudEl.classList.add("hud-hidden");
   clearArt(); setStatus("");
-  camera.position.set(0, 1.7, 2);
+  camera.position.set(0, 2.2, 2);
   camera.rotation.set(0, 0, 0);
   mobileYaw = 0; mobilePitch = 0;
   showLandingPage();
@@ -2401,34 +2401,68 @@ async function loadMuseumForWallets(rawInput) {
     setBusy(false); return;
   }
 
-  /* Let user pick which normies to display (max 10) */
+  /* Let user pick which normies to display */
   setBusy(false);
+  /* Push wallet to URL hash so it can be shared / linked */
+  try { window.history.replaceState(null, "", "#w=" + encodeURIComponent(rawInput.trim())); } catch (e) {}
   showSelectionGrid(allTokenIds, addresses);
 }
 
 /* ── Normie selection grid ────────────────────────────────────────────────── */
 var _selAddresses = [];  /* saved for HUD label after entering */
+var _selTokenIds = [];
+var _selSelected = new Set();
+var _selPage = 0;
+var MAX_GALLERY_SELECT = 40;
+var SEL_PAGE_SIZE = 50;
 
 function showSelectionGrid(tokenIds, addresses) {
   _selAddresses = addresses || [];
-  var MAX_SELECT = 40;
-  var selected = new Set();
+  _selTokenIds = tokenIds;
+  _selSelected = new Set();
+  _selPage = 0;
 
-  selectionGrid.innerHTML = "";
-  selectionCountEl.textContent = "0 / " + MAX_SELECT + " selected";
+  selectionCountEl.textContent = "0 / " + MAX_GALLERY_SELECT + " selected";
   selectionLoadBtn2.disabled = true;
   selectionOverlay.classList.remove("selection-hidden");
+  setStatus(tokenIds.length + " normies found \u2014 pick up to " + MAX_GALLERY_SELECT + (tokenIds.length > 40 ? " (40 max)" : ""));
 
-  /* Status line on the landing page */
-  setStatus(tokenIds.length + " normies found \u2014 pick up to " + MAX_SELECT + (tokenIds.length > 40 ? " (40 max)" : ""));
+  renderSelPage();
 
-  /* Build all cards */
-  tokenIds.forEach(function(tokenId) {
+  selectionLoadBtn2.onclick = function() {
+    if (_selSelected.size === 0) return;
+    selectionOverlay.classList.add("selection-hidden");
+    enterWithSelection([..._selSelected]);
+  };
+  selectionCancelBtn.onclick = function() {
+    selectionOverlay.classList.add("selection-hidden");
+    setStatus(_selTokenIds.length + " normies found.");
+  };
+  var prevBtn = $("selPrevBtn"), nextBtn = $("selNextBtn");
+  if (prevBtn) prevBtn.onclick = function() {
+    if (_selPage > 0) { _selPage--; renderSelPage(); }
+  };
+  if (nextBtn) nextBtn.onclick = function() {
+    var totalPages = Math.ceil(_selTokenIds.length / SEL_PAGE_SIZE);
+    if (_selPage < totalPages - 1) { _selPage++; renderSelPage(); }
+  };
+}
+
+function renderSelPage() {
+  var totalPages = Math.max(1, Math.ceil(_selTokenIds.length / SEL_PAGE_SIZE));
+  var start = _selPage * SEL_PAGE_SIZE;
+  var end = Math.min(start + SEL_PAGE_SIZE, _selTokenIds.length);
+  var pageTokens = _selTokenIds.slice(start, end);
+  var full = _selSelected.size >= MAX_GALLERY_SELECT;
+
+  selectionGrid.innerHTML = "";
+  pageTokens.forEach(function(tokenId) {
     var card = document.createElement("div");
     card.className = "normie-card";
+    if (_selSelected.has(tokenId)) card.classList.add("selected");
+    else if (full) card.classList.add("disabled");
     card.dataset.id = tokenId;
 
-    /* Image — direct URL avoids canvas download overhead for thumbnails */
     var img = document.createElement("img");
     img.className = "normie-img";
     img.src = NORMIES_API + "/normie/" + tokenId + "/image.png";
@@ -2443,38 +2477,34 @@ function showSelectionGrid(tokenIds, addresses) {
     card.appendChild(label);
 
     card.addEventListener("click", function() {
-      if (selected.has(tokenId)) {
-        selected.delete(tokenId);
-        card.classList.remove("selected");
+      if (_selSelected.has(tokenId)) {
+        _selSelected.delete(tokenId); card.classList.remove("selected");
       } else {
-        if (selected.size >= MAX_SELECT) return;
-        selected.add(tokenId);
-        card.classList.add("selected");
+        if (_selSelected.size >= MAX_GALLERY_SELECT) return;
+        _selSelected.add(tokenId); card.classList.add("selected");
       }
-      /* Disable un-selected cards when limit reached */
-      var full = selected.size >= MAX_SELECT;
+      var nowFull = _selSelected.size >= MAX_GALLERY_SELECT;
       selectionGrid.querySelectorAll(".normie-card").forEach(function(c) {
-        if (!c.classList.contains("selected")) {
-          c.classList.toggle("disabled", full);
-        }
+        if (!c.classList.contains("selected")) c.classList.toggle("disabled", nowFull);
       });
-      selectionCountEl.textContent = selected.size + " / " + MAX_SELECT + " selected";
-      selectionLoadBtn2.disabled = selected.size === 0;
+      selectionCountEl.textContent = _selSelected.size + " / " + MAX_GALLERY_SELECT + " selected";
+      selectionLoadBtn2.disabled = _selSelected.size === 0;
     });
 
     selectionGrid.appendChild(card);
   });
 
-  selectionLoadBtn2.onclick = function() {
-    if (selected.size === 0) return;
-    selectionOverlay.classList.add("selection-hidden");
-    enterWithSelection([...selected]);
-  };
-
-  selectionCancelBtn.onclick = function() {
-    selectionOverlay.classList.add("selection-hidden");
-    setStatus(tokenIds.length + " normies found.");
-  };
+  /* Pagination controls */
+  var pag = $("selectionPagination");
+  if (pag) {
+    pag.style.display = totalPages > 1 ? "flex" : "none";
+    var pi = $("selPageInfo");
+    if (pi) pi.textContent = (_selPage + 1) + " / " + totalPages;
+    var pb = $("selPrevBtn"), nb = $("selNextBtn");
+    if (pb) pb.disabled = _selPage === 0;
+    if (nb) nb.disabled = _selPage >= totalPages - 1;
+  }
+  selectionGrid.scrollTop = 0;
 }
 
 function enterWithSelection(selectedIds) {
@@ -2512,6 +2542,17 @@ exitBtn.addEventListener("click", exitMuseum);
 loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
 walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
 document.getElementById("interaction-hint").addEventListener("click", function(e) { e.stopPropagation(); tryInteract(); });
+
+/* Auto-load from URL hash — e.g. normuseum.app/#w=0xabc… */
+(function checkHashAutoLoad() {
+  var m = window.location.hash.match(/^#w=(.+)$/);
+  if (!m) return;
+  var decoded = "";
+  try { decoded = decodeURIComponent(m[1]); } catch (e) { return; }
+  if (!decoded) return;
+  walletInput.value = decoded;
+  loadMuseumForWallets(decoded);
+})();
 
 /* ── Help tooltip ─────────────────────────────────────────────────────────── */
 var helpBtn = $("helpBtn");
