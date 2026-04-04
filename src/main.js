@@ -1508,36 +1508,24 @@ function buildSecretButton() {
   return group;
 }
 
-/* ── Secret door button — brass panel, noticeable if you look ─────────────── */
+/* ── Secret door button — subtle but protruding, close to wall colour ───── */
 function buildDoorButton() {
   var group = new THREE.Group();
-  /* Brass backing plate */
+  /* Backing plate — close to wall colour, slightly warmer */
   var plate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.20, 0.20, 0.016),
-    new THREE.MeshStandardMaterial({ color: "#8a7a55", roughness: 0.30, metalness: 0.50 })
+    new THREE.BoxGeometry(0.14, 0.14, 0.022),
+    new THREE.MeshStandardMaterial({ color: "#d8cfc0", roughness: 0.80, metalness: 0.06 })
   );
-  plate.position.z = 0.008; group.add(plate);
-  /* Thin frame border around plate */
-  var frame = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.24, 0.008),
-    new THREE.MeshStandardMaterial({ color: "#6a5c38", roughness: 0.25, metalness: 0.55 })
-  );
-  frame.position.z = 0.002; group.add(frame);
-  /* Round button — polished brass, clearly distinct */
+  plate.position.z = 0.011; group.add(plate);
+  /* Round button — protrudes noticeably, slightly different sheen than wall */
   var btn = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.045, 0.048, 0.024, 24),
-    new THREE.MeshStandardMaterial({ color: "#c8b060", roughness: 0.22, metalness: 0.55 })
+    new THREE.CylinderGeometry(0.038, 0.040, 0.035, 24),
+    new THREE.MeshStandardMaterial({ color: "#ccc4b4", roughness: 0.50, metalness: 0.12 })
   );
   btn.rotation.x = Math.PI / 2;
-  btn.position.z = 0.028;
+  btn.position.z = 0.040;
   btn.userData.isDoorBtn = true;
   group.add(btn);
-  /* Small amber LED indicator dot below button */
-  var led = new THREE.Mesh(
-    new THREE.SphereGeometry(0.012, 12, 12),
-    new THREE.MeshStandardMaterial({ color: "#ff9922", emissive: "#ff8800", emissiveIntensity: 0.6, roughness: 0.3 })
-  );
-  led.position.set(0, -0.065, 0.016); group.add(led);
   group.userData.btnMesh = btn;
   return group;
 }
@@ -1858,23 +1846,24 @@ function pressDoorButton() {
   }
 }
 
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+
 function tickDoorAnim(dt) {
   if (!doorAnimating || !doorPanel) return;
-  var speed = 1.6;  /* panel heights per second */
+  var speed = 0.9;  /* slower for smoother feel */
   if (doorOpen) {
     doorAnim = Math.min(1, doorAnim + dt * speed);
   } else {
     doorAnim = Math.max(0, doorAnim - dt * speed);
   }
-  /* Slide the panel UP when opening */
-  var slideY = doorPanelOrigY + doorAnim * (ALCOVE_H + 0.2);
+  /* Smooth eased slide UP */
+  var eased = smoothstep(doorAnim);
+  var slideY = doorPanelOrigY + eased * (ALCOVE_H + 0.2);
   doorPanel.position.y = slideY;
   if (doorAnim >= 1 || doorAnim <= 0) {
     doorAnimating = false;
-    /* When fully closed, hide the room geometry again */
     if (!doorOpen && hiddenRoomGroup) {
       hiddenRoomGroup.visible = false;
-      /* Remove walk zone */
       var idx = walkZones.indexOf(hiddenRoomWalkZone);
       if (idx >= 0) walkZones.splice(idx, 1);
     }
@@ -1984,9 +1973,35 @@ function pressButton() {
   var activeBtn = getActivePodiumBtn();
   if (!activeBtn || btnAnimating) return;
   framesVisible = !framesVisible;
+
+  /* Collect tokenIds that currently have a history animation playing */
+  var animatingTokens = {};
+  for (var hi = 0; hi < historyAnims.length; hi++) {
+    animatingTokens[historyAnims[hi].tokenId] = true;
+  }
+
   for (var ai = 0; ai < artGroup.children.length; ai++) {
-    artGroup.children[ai].traverse(function(child) {
+    var artGrp = artGroup.children[ai];
+    /* If this art group has an active history animation, swap its displayed frame */
+    if (artGrp.userData && artGrp.userData.tokenId && animatingTokens[artGrp.userData.tokenId]) {
+      var anim = historyAnims.find(function(a) { return a.tokenId === artGrp.userData.tokenId; });
+      if (anim) {
+        /* Remove current history mesh */
+        var oldH = [];
+        artGrp.traverse(function(c) { if (c.userData && c.userData._historyAnim) oldH.push(c); });
+        oldH.forEach(function(c) { artGrp.remove(c); });
+        /* Add correct type for new mode */
+        var showVoxel = !framesVisible;
+        var mesh = showVoxel ? anim.voxelMeshes[anim.frameIdx] : anim.flatMeshes[anim.frameIdx];
+        if (mesh) { mesh.userData._historyAnim = true; artGrp.add(mesh); }
+      }
+      /* Keep original children hidden — history owns the display */
+      continue;
+    }
+    /* Normal art group — toggle visibility */
+    artGrp.traverse(function(child) {
       if (!child.userData) return;
+      if (child.userData._historyAnim) return;  /* skip stale history meshes */
       if (child.userData.isFrame || child.userData.isFlat) child.visible = framesVisible;
       if (child.userData.isVoxel) child.visible = !framesVisible;
     });
