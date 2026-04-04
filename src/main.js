@@ -2742,6 +2742,17 @@ async function loadMuseumForWallets(rawInput) {
   }
 
   /* Let user pick which normies to display */
+  /* Fetch all metas in parallel to get AP, then sort highest AP first */
+  setStatus("sorting by level\u2026");
+  try {
+    await Promise.all(allTokenIds.map(function(tid) { return fetchTokenMeta(tid).catch(function() {}); }));
+  } catch (e) {}
+  allTokenIds.sort(function(a, b) {
+    var apA = (metaCache.get(a) || {}).ap || 0;
+    var apB = (metaCache.get(b) || {}).ap || 0;
+    return apB - apA;
+  });
+
   setBusy(false);
   /* Push wallet to URL hash so it can be shared / linked */
   try { window.history.replaceState(null, "", "#w=" + encodeURIComponent(rawInput.trim())); } catch (e) {}
@@ -2813,7 +2824,8 @@ function renderSelPage() {
 
     var label = document.createElement("div");
     label.className = "normie-card-label";
-    label.textContent = "#" + tokenId;
+    var ap = (metaCache.get(tokenId) || {}).ap;
+    label.textContent = "#" + tokenId + (ap ? " \u00b7 " + ap + "ap" : "");
     card.appendChild(label);
 
     card.addEventListener("click", function() {
