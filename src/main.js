@@ -1739,11 +1739,11 @@ function buildLinkPanel(label, desc) {
 
 /* ── Links floor button + the whole panel cluster ─────────────────────────── */
 function buildLinksSystem(parentGroup, cx, zStart) {
-  /* Floor disc button on the left side near the entrance */
+  /* Disc in the open floor centre-left — away from fruit pedestals (zStart-4 / zStart-5.5) */
   var discGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.038, 32);
   var discMat = new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.25, metalness: 0.55 });
   var disc = new THREE.Mesh(discGeo, discMat);
-  var bx = cx - 2.4, bz = zStart - 2.2;
+  var bx = cx - 1.0, bz = zStart - 7.0;
   disc.position.set(bx, 0.019, bz);
   disc.userData.isLinksBtn = true;
   linksBtnMesh = disc;
@@ -1764,20 +1764,27 @@ function buildLinksSystem(parentGroup, cx, zStart) {
   lbl.rotation.x = -Math.PI / 8;
   parentGroup.add(lbl);
 
-  /* Nine link panels in an arc at eye level, centred ahead of the button */
+  /* 3×3 curved grid — panels arc around the disc, each column facing the viewer */
   var pg = new THREE.Group();
   linkPanelMeshes = [];
-  var count = LINKS_DATA.length;
-  var arcHalf = Math.PI * 0.52;  /* ≈108° total spread */
-  var radius  = 5.0;
-  var aimZ    = zStart - 10;
-  for (var li = 0; li < count; li++) {
-    var angle = -arcHalf / 2 + arcHalf * (li / (count - 1));
-    var px = cx + Math.sin(angle) * radius;
-    var pz = aimZ + radius - Math.cos(angle) * radius;
+  var COLS = 3, ROWS = 3;
+  var arcRadius  = 4.2;   /* cylinder radius for the curve */
+  var arcSpread  = 0.52;  /* half-angle of the 3-column arc (radians) — ~30° each side */
+  var rowSpacing = 0.82;
+  var gridY      = 2.55;
+  /* Arc is centred on the disc; panels sit on the far side of the arc toward -Z */
+  for (var li = 0; li < LINKS_DATA.length; li++) {
+    var col = li % COLS;
+    var row = Math.floor(li / COLS);
+    /* Angle from disc: -arcSpread (left col) → 0 (centre) → +arcSpread (right col) */
+    var angle = -arcSpread + col * arcSpread;
+    var px = bx + Math.sin(angle) * arcRadius;
+    var pz = bz - Math.cos(angle) * arcRadius;
+    var py = gridY + (1 - row) * rowSpacing;
     var panel = buildLinkPanel(LINKS_DATA[li].label, LINKS_DATA[li].desc);
-    panel.position.set(px, 2.15, pz);
-    panel.rotation.y = -angle;
+    panel.position.set(px, py, pz);
+    /* Each panel rotates to face the disc (viewer side) */
+    panel.rotation.y = angle;
     pg.add(panel);
     linkPanelMeshes.push({ mesh: panel.userData.btnMesh, url: LINKS_DATA[li].url });
   }
