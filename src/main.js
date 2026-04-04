@@ -62,11 +62,7 @@ var GRAVITY = -12;
 var JUMP_FORCE = 5.2;
 var GROUND_Y = 2.2;
 
-/* ── Bench sitting ────────────────────────────────────────────────────────── */
-var isSitting = false;
 var benchPositions = [];
-var benchHovered = false;
-var nearBenchIdx = -1;
 
 /* ── Surface collision (stand on benches/podiums) ─────────────────────────── */
 var surfaceBoxes = [];  /* { minX, maxX, minZ, maxZ, topY } */
@@ -1728,47 +1724,39 @@ function buildFruitPedestals(ri, cx, zStart, zEnd, wallHalf) {
   return results;
 }
 
-/* ── Apple mesh (green apple) ─────────────────────────────────────────────── */
+/* ── Emoji sprite helper ───────────────────────────────────────────────────── */
+function buildEmojiSprite(emoji) {
+  var size = 256;
+  var c = document.createElement("canvas"); c.width = size; c.height = size;
+  var ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, size, size);
+  ctx.font = Math.round(size * 0.72) + "px serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, size / 2, size / 2 + size * 0.04);
+  var tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  var mat = new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true });
+  var sprite = new THREE.Sprite(mat);
+  sprite.scale.set(0.30, 0.30, 0.30);
+  return sprite;
+}
+
+/* ── Apple (emoji sprite) ─────────────────────────────────────────────────── */
 function buildApple() {
   var g = new THREE.Group();
-  var body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.11, 16, 14),
-    new THREE.MeshPhysicalMaterial({ color: "#4a8c2a", roughness: 0.35, metalness: 0.04,
-      clearcoat: 0.6, clearcoatRoughness: 0.1 })
-  );
-  body.scale.set(1, 1.08, 1);
-  body.position.y = 0.11; g.add(body);
-  /* Stem */
-  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.06, 6),
-    new THREE.MeshStandardMaterial({ color: "#3a2010", roughness: 0.7 }));
-  stem.position.y = 0.225; g.add(stem);
-  /* Small leaf */
-  var leafShape = new THREE.Shape();
-  leafShape.ellipse(0, 0, 0.025, 0.012, 0, Math.PI * 2);
-  var leafGeo = new THREE.ShapeGeometry(leafShape);
-  var leaf = new THREE.Mesh(leafGeo, new THREE.MeshStandardMaterial({ color: "#2e7020", roughness: 0.6, side: THREE.DoubleSide }));
-  leaf.position.set(0.022, 0.24, 0); leaf.rotation.z = 0.4; g.add(leaf);
+  var sprite = buildEmojiSprite("\uD83C\uDF4E");
+  sprite.position.y = 0.15;
+  g.add(sprite);
   return g;
 }
 
-/* ── Orange mesh ──────────────────────────────────────────────────────────── */
+/* ── Orange (emoji sprite) ────────────────────────────────────────────────── */
 function buildOrange() {
   var g = new THREE.Group();
-  var body = new THREE.Mesh(
-    new THREE.SphereGeometry(0.115, 18, 14),
-    new THREE.MeshPhysicalMaterial({ color: "#e07020", roughness: 0.55, metalness: 0.0,
-      clearcoat: 0.2, clearcoatRoughness: 0.35 })
-  );
-  body.scale.set(1, 0.94, 1);
-  body.position.y = 0.115; g.add(body);
-  /* Navel dimple — tiny dark disc at top near stem */
-  var navel = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.006, 8),
-    new THREE.MeshStandardMaterial({ color: "#7a4010", roughness: 0.9 }));
-  navel.position.y = 0.222; g.add(navel);
-  /* Stem */
-  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.005, 0.04, 6),
-    new THREE.MeshStandardMaterial({ color: "#3a2c10", roughness: 0.7 }));
-  stem.position.y = 0.235; g.add(stem);
+  var sprite = buildEmojiSprite("\uD83C\uDF4A");
+  sprite.position.y = 0.15;
+  g.add(sprite);
   return g;
 }
 
@@ -1932,7 +1920,7 @@ function checkHistoryInteraction() {
       return;
     }
     historyBtnHovered = false; hoveredHistoryGroup = null;
-    if (!buttonHovered && !benchHovered) updateInteractionHint(false);
+    if (!buttonHovered) updateInteractionHint(false);
     return;
   }
 
@@ -1963,19 +1951,13 @@ function checkHistoryInteraction() {
   }
   historyBtnHovered = false;
   hoveredHistoryGroup = null;
-  if (!buttonHovered && !benchHovered) updateInteractionHint(false);
+  if (!buttonHovered) updateInteractionHint(false);
 }
 
 function updateInteractionHint(show, mode) {
   var el = document.getElementById("interaction-hint");
   if (!el) return;
-  if (mode === "sit-up") {
-    el.querySelector(".hint-desktop").textContent = "[E] stand up";
-    el.querySelector(".hint-touch").textContent = "tap to stand up";
-  } else if (mode === "sit-down") {
-    el.querySelector(".hint-desktop").textContent = "[E] sit down";
-    el.querySelector(".hint-touch").textContent = "tap to sit";
-  } else if (mode === "history") {
+  if (mode === "history") {
     el.querySelector(".hint-desktop").textContent = "[E] play history";
     el.querySelector(".hint-touch").textContent = "tap to play history";
   } else {
@@ -1995,7 +1977,7 @@ function updateInteractionHint(show, mode) {
 function tickHintDismiss(dt) {
   if (hintDismissTimer <= 0) return;
   /* Don't dismiss while actively hovering an interactive object */
-  if (buttonHovered || benchHovered || historyBtnHovered || isSitting) { hintDismissTimer = HINT_PERSIST; return; }
+  if (buttonHovered || historyBtnHovered) { hintDismissTimer = HINT_PERSIST; return; }
   hintDismissTimer -= dt;
   if (hintDismissTimer <= 0) {
     hintDismissTimer = 0;
@@ -2055,45 +2037,68 @@ function pressSecretButton() {
   /* Depress the button */
   secretBtnMesh.position.z -= 0.01;
   playExplodeSound();
-  /* Shatter every art group into voxels */
+
+  /* Collect ALL art groups: on-wall + dropped */
   var toExplode = [];
   artGroup.traverse(function(c) {
-    if (c === artGroup) return;
-    if (!c.parent || c.parent !== artGroup) return;
-    toExplode.push(c);
+    if (c !== artGroup && c.parent === artGroup) toExplode.push(c);
   });
+  droppedArts.forEach(function(da) { toExplode.push(da.group); });
+
   toExplode.forEach(function(artG) {
     var worldPos = new THREE.Vector3();
     artG.getWorldPosition(worldPos);
-    /* Collect voxel colors/positions from the instanced mesh children */
+    /* Collect voxel colors from instanced mesh */
     var instMesh = null;
     artG.traverse(function(ch) { if (ch.isInstancedMesh) instMesh = ch; });
-    var numVoxels = instMesh ? Math.min(instMesh.count, 120) : 20;
+    var numVoxels = instMesh ? Math.min(instMesh.count, 200) : 40;
     var dummy = new THREE.Matrix4(), col = new THREE.Color();
     for (var vi = 0; vi < numVoxels; vi++) {
-      var voxMat = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.04 });
+      var voxMat = new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0.06, transparent: true, opacity: 1.0 });
       if (instMesh) {
         instMesh.getMatrixAt(vi, dummy);
         if (instMesh.instanceColor) { instMesh.getColorAt(vi, col); voxMat.color.copy(col); }
         else voxMat.color.set("#c0b090");
       } else {
-        voxMat.color.set("#c0b090");
+        voxMat.color.setHSL(Math.random() * 0.1 + 0.07, 0.3, 0.55);
       }
-      var vox = new THREE.Mesh(new THREE.BoxGeometry(VOXEL_SIZE * 1.5, VOXEL_SIZE * 1.5, VOXEL_SIZE * 1.5), voxMat);
-      /* Random scatter from art's world position */
+      var sz = VOXEL_SIZE * (1.4 + Math.random() * 1.2);
+      var vox = new THREE.Mesh(new THREE.BoxGeometry(sz, sz, sz), voxMat);
       vox.position.copy(worldPos);
-      vox.position.x += (Math.random() - 0.5) * 2.2;
-      vox.position.y += (Math.random() - 0.5) * 2.0 + 1.5;
-      vox.position.z += (Math.random() - 0.5) * 2.2;
+      vox.position.x += (Math.random() - 0.5) * ART_W;
+      vox.position.y += (Math.random() - 0.5) * ART_H + ART_H * 0.5;
+      vox.position.z += (Math.random() - 0.5) * ART_W * 0.6;
       scene.add(vox);
+      /* Radial + upward velocity burst */
+      var angle = Math.random() * Math.PI * 2;
+      var spd   = 4 + Math.random() * 10;
       explodeParticles.push({
         mesh: vox,
         vel: new THREE.Vector3(
-          (Math.random() - 0.5) * 8,
-          Math.random() * 7 + 2,
-          (Math.random() - 0.5) * 8
+          Math.cos(angle) * spd,
+          Math.random() * 9 + 3,
+          Math.sin(angle) * spd * 0.7
         ),
-        rot: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3),
+        rot: new THREE.Vector3(Math.random() * 8 - 4, Math.random() * 8 - 4, Math.random() * 8 - 4),
+        life: 10.0
+      });
+    }
+    /* Extra tiny debris for visual richness */
+    for (var di2 = 0; di2 < 30; di2++) {
+      var dMat = new THREE.MeshStandardMaterial({ color: "#a09080", roughness: 0.6, transparent: true, opacity: 1.0 });
+      var ds = VOXEL_SIZE * (0.5 + Math.random() * 0.8);
+      var dv = new THREE.Mesh(new THREE.BoxGeometry(ds, ds, ds), dMat);
+      dv.position.copy(worldPos);
+      dv.position.x += (Math.random() - 0.5) * ART_W * 1.4;
+      dv.position.y += Math.random() * ART_H;
+      dv.position.z += (Math.random() - 0.5) * ART_W * 1.4;
+      scene.add(dv);
+      var angle2 = Math.random() * Math.PI * 2;
+      var spd2   = 6 + Math.random() * 12;
+      explodeParticles.push({
+        mesh: dv,
+        vel: new THREE.Vector3(Math.cos(angle2) * spd2, Math.random() * 12 + 4, Math.sin(angle2) * spd2),
+        rot: new THREE.Vector3(Math.random() * 12 - 6, Math.random() * 12 - 6, Math.random() * 12 - 6),
         life: 10.0
       });
     }
@@ -2104,10 +2109,12 @@ function pressSecretButton() {
 
 function tickExplode(dt) {
   if (!explodeActive) return;
+  var FADE_START = 2.5;  /* seconds before reset when fade begins */
   /* Tick particles */
   for (var pi = 0; pi < explodeParticles.length; pi++) {
     var p = explodeParticles[pi];
     p.vel.y += GRAVITY * dt;
+    /* Wall bounce for particles too */
     p.mesh.position.addScaledVector(p.vel, dt);
     p.mesh.rotation.x += p.rot.x * dt;
     p.mesh.rotation.y += p.rot.y * dt;
@@ -2115,8 +2122,13 @@ function tickExplode(dt) {
     /* Bounce/settle on floor */
     if (p.mesh.position.y < 0.04) {
       p.mesh.position.y = 0.04;
-      p.vel.y = Math.abs(p.vel.y) * 0.22;
-      p.vel.x *= 0.7; p.vel.z *= 0.7;
+      p.vel.y = Math.abs(p.vel.y) * 0.25;
+      p.vel.x *= 0.65; p.vel.z *= 0.65;
+    }
+    /* Fade out in last FADE_START seconds */
+    if (explodeResetTimer < FADE_START) {
+      var fadeT = Math.max(0, explodeResetTimer / FADE_START);
+      if (p.mesh.material.opacity !== undefined) p.mesh.material.opacity = fadeT;
     }
     p.life -= dt;
   }
@@ -2126,6 +2138,30 @@ function tickExplode(dt) {
     /* Remove particles */
     explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
     explodeParticles = [];
+    /* Snap all dropped arts back to wall slots */
+    for (var ri3 = droppedArts.length - 1; ri3 >= 0; ri3--) {
+      var da3 = droppedArts[ri3];
+      var ag3 = da3.group;
+      scene.remove(ag3);
+      if (ag3.userData.wallSlot) {
+        ag3.position.copy(ag3.userData.wallSlot.pos);
+        ag3.rotation.set(0, ag3.userData.wallSlot.ry, 0);
+        ag3.scale.setScalar(1);
+        artGroup.add(ag3);
+      } else { dispose(ag3); }
+    }
+    droppedArts = [];
+    /* Cancel any active drag */
+    if (isDragging && draggedArt) {
+      var dart2 = draggedArt; draggedArt = null; isDragging = false;
+      scene.remove(dart2);
+      if (dart2.userData.wallSlot) {
+        dart2.position.copy(dart2.userData.wallSlot.pos);
+        dart2.rotation.set(0, dart2.userData.wallSlot.ry, 0);
+        dart2.scale.setScalar(1);
+        artGroup.add(dart2);
+      } else { dispose(dart2); }
+    }
     /* Restore art visibility */
     artGroup.traverse(function(c) {
       if (c !== artGroup && c.parent === artGroup) c.visible = true;
@@ -2155,7 +2191,6 @@ function playExplodeSound() {
 }
 
 function tryInteract() {
-  if (isSitting) { standUp(); return; }
   if (secretBtnHovered) { pressSecretButton(); return; }
   if (doorBtnHovered) { pressDoorButton(); return; }
   if (historyBtnHovered && hoveredHistoryGroup) {
@@ -2164,7 +2199,6 @@ function tryInteract() {
     return;
   }
   if (buttonHovered) { pressButton(); return; }
-  if (benchHovered && nearBenchIdx >= 0) { sitDown(nearBenchIdx); return; }
 
   /* Touch fallback: wider range (3.5u) for E/interact button even if hint isn't showing */
   if (isTouch) {
@@ -2191,50 +2225,15 @@ function tryInteract() {
     });
     if (bestG) { toggleHistoryAnim(bestG, bestG.userData.tokenId); return; }
     /* Secret explode button */
-    if (secretBtnMesh) {
+    if (secretBtnMesh && !explodeActive) {
       var wp5 = new THREE.Vector3();
       secretBtnMesh.getWorldPosition(wp5);
-      if (camera.position.distanceTo(wp5) < 2.5) { pressSecretButton(); return; }
+      if (camera.position.distanceTo(wp5) < 4.0) { pressSecretButton(); return; }
     }
   }
 }
 
-function sitDown(bi) {
-  var b = benchPositions[bi];
-  if (!b) return;
-  isSitting = true;
-  camera.position.set(b.x, 0.9, b.z);
-  GROUND_Y = 0.9;
-  updateInteractionHint(true, "sit-up");
-}
 
-function standUp() {
-  isSitting = false;
-  GROUND_Y = 2.2;
-  camera.position.y = 2.2;
-  updateInteractionHint(false);
-}
-
-function checkBenchProximity() {
-  if (isSitting) return;
-  var px = camera.position.x, pz = camera.position.z;
-  var closest = -1, closestDist = 2.5;
-  for (var i = 0; i < benchPositions.length; i++) {
-    var b = benchPositions[i];
-    var d = Math.sqrt((px - b.x) * (px - b.x) + (pz - b.z) * (pz - b.z));
-    if (d < closestDist) { closestDist = d; closest = i; }
-  }
-  nearBenchIdx = closest;
-  var newHover = closest >= 0 && !buttonHovered;
-  if (newHover !== benchHovered) {
-    benchHovered = newHover;
-    if (benchHovered) {
-      updateInteractionHint(true, "sit-down");
-    } else if (!buttonHovered) {
-      updateInteractionHint(false);
-    }
-  }
-}
 
 function playButtonClick() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -2467,7 +2466,7 @@ function exitMuseum() {
   if (stateEl) stateEl.textContent = "off";
 
   inMuseum = false; currentRoomIdx = -1;
-  isSitting = false; isJumping = false; jumpVelocity = 0; GROUND_Y = 2.2;
+  isJumping = false; jumpVelocity = 0; GROUND_Y = 2.2;
   /* Reset drag state */
   if (draggedArt) { scene.remove(draggedArt); dispose(draggedArt); draggedArt = null; }
   isDragging = false; dragVelocity.set(0, 0, 0);
@@ -2889,7 +2888,7 @@ document.addEventListener("click", function(e) {
   if (armsEl) {
     armsEl.checked = showArms;
     armsEl.addEventListener("change", function() {
-      showArms = this.checked; armsGroup.visible = showArms && !isSitting;
+      showArms = this.checked; armsGroup.visible = showArms;
     });
   }
   var xhEl = $("crosshairToggle");
@@ -3000,7 +2999,7 @@ if (!isTouch) {
     if (e.code === "KeyF" && inMuseum) toggleFullscreen();
     if (e.code === "KeyE" && inMuseum) tryInteract();
     if (e.code === "KeyM" && inMuseum) toggleMusic();
-    if (e.code === "Space" && inMuseum && !isJumping && !isSitting) {
+    if (e.code === "Space" && inMuseum && !isJumping) {
       e.preventDefault(); isJumping = true; jumpVelocity = JUMP_FORCE;
       playJumpSound();
     }
@@ -3087,7 +3086,6 @@ function clampToWalkZones(px, pz) {
 var vel = new THREE.Vector3(), dir = new THREE.Vector3();
 
 function move(dt) {
-  if (isSitting) return;
   var isMoving = false, isSprinting = false;
 
   if (isTouch) {
@@ -3347,7 +3345,7 @@ function easeOutBack(t) {
 
 /* ── Arms tick ────────────────────────────────────────────────────────────── */
 function tickArms(dt) {
-  var visible = showArms && !isSitting;
+  var visible = showArms;
   armsGroup.visible = visible;
   if (!visible) return;
 
@@ -3447,7 +3445,7 @@ function animate() {
   checkSecretButtonInteraction();
   checkDoorButtonInteraction();
   checkHistoryInteraction();
-  checkBenchProximity();
+
   tickHistoryAnims(dt);
   tickDraggedArt(dt);
   tickDroppedArts(dt);
