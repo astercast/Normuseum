@@ -517,13 +517,16 @@ body::before {
 #helpPanel {
   position: absolute;
   bottom: 18px; right: 18px;
+  width: 280px;
+  max-height: 70vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
   background: var(--hud-bg);
   backdrop-filter: blur(6px);
   border: 1px solid var(--border);
-  padding: 10px 14px;
+  padding: 12px 14px;
   pointer-events: all;
   opacity: 0;
   visibility: hidden;
@@ -532,6 +535,29 @@ body::before {
 #helpPanel.visible {
   opacity: 1;
   visibility: visible;
+}
+.help-section-title {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+.help-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.help-tip {
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+.help-tip kbd {
+  min-width: unset;
+  padding: 1px 4px;
 }
 .ctrl {
   display: flex;

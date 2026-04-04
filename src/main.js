@@ -197,17 +197,14 @@ if (!isTouch) {
 
 /* ── Build voxel arms attached to camera ─────────────────────────────────── */
 (function buildArms() {
-  var sleeveMat = new THREE.MeshStandardMaterial({ color: "#2a2520", roughness: 0.8 });
-  var handMat   = new THREE.MeshStandardMaterial({ color: "#c4956a", roughness: 0.55 });
+  var armMat = new THREE.MeshStandardMaterial({ color: "#1a1818", roughness: 0.85 });
   function makeArm(g) {
-    var sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.07, 0.20), sleeveMat);
-    sleeve.position.set(0, 0, -0.04); g.add(sleeve);
-    var hand = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.056, 0.085), handMat);
-    hand.position.set(0, -0.004, -0.155); g.add(hand);
+    var sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.22), armMat);
+    sleeve.position.set(0, 0, -0.05); g.add(sleeve);
   }
   makeArm(armRGroup); makeArm(armLGroup);
-  armRGroup.position.set( 0.24, -0.30, -0.34);
-  armLGroup.position.set(-0.24, -0.30, -0.34);
+  armRGroup.position.set( 0.21, -0.34, -0.30);
+  armLGroup.position.set(-0.21, -0.34, -0.30);
   armsGroup.add(armRGroup); armsGroup.add(armLGroup);
   camera.add(armsGroup);
 })();
@@ -594,15 +591,22 @@ function buildRoom(ri) {
     surfaceBoxes.push({ minX: fp.x - 0.36, maxX: fp.x + 0.36, minZ: fp.z - 0.36, maxZ: fp.z + 0.36, topY: 1.08 + 1.7 });
   });
 
-  /* ── Secret explode button — room 0 only, in a corner ── */
+  /* ── Secret explode button — on the apple pedestal ── */
   if (ri === 0) {
-    var sBtn = buildSecretButton();
-    /* Place on left wall near entrance — slightly warm-gray tint visible against wall */
-    var sbx = cx - WALL_X + 0.018, sbz = room.zStart - 1.2;
-    sBtn.position.set(sbx, 1.4, sbz);
-    sBtn.rotation.y = -Math.PI / 2;  /* faces into room */
-    g.add(sBtn);
-    secretBtnMesh = sBtn.userData.btnMesh;
+    var applePed = fruitPedestals.find(function(fp) { return fp.isApple; });
+    if (applePed) {
+      var sBtn = buildSecretButton();
+      /* Face inward (toward room center) from the pedestal shaft */
+      var facingRight = applePed.side < 0;  /* apple is on left wall, so button faces right (+X) */
+      sBtn.position.set(
+        facingRight ? 0.26 : -0.26,  /* protrude from shaft side */
+        0.62,                          /* comfortable waist height */
+        0
+      );
+      sBtn.rotation.y = facingRight ? -Math.PI / 2 : Math.PI / 2;
+      applePed.group.add(sBtn);
+      secretBtnMesh = sBtn.userData.btnMesh;
+    }
 
     /* ── Secret door button — right wall, mid-room ── */
     var dBtn = buildDoorButton();
@@ -1700,7 +1704,7 @@ function buildFruitPedestals(ri, cx, zStart, zEnd, wallHalf) {
     fruit.position.y = 1.16;  /* just above capital */
     grp.add(fruit);
     grp.position.set(px, 0, pz);
-    results.push({ group: grp, x: px, z: pz });
+    results.push({ group: grp, x: px, z: pz, isApple: ft === "apple", side: side });
   });
   return results;
 }
@@ -2913,7 +2917,7 @@ function move(dt) {
     jumpVelocity += GRAVITY * dt;
     camera.position.y += jumpVelocity * dt;
     /* Check if landing on a surface */
-    var landY = 1.7;  /* default ground */
+    var landY = 2.2;  /* default ground */
     var px = camera.position.x, pz = camera.position.z;
     for (var si = 0; si < surfaceBoxes.length; si++) {
       var sb = surfaceBoxes[si];
@@ -2931,7 +2935,7 @@ function move(dt) {
     }
   } else {
     /* Check if we've walked off a surface */
-    var floorY = 1.7;
+    var floorY = 2.2;
     var px2 = camera.position.x, pz2 = camera.position.z;
     for (var si2 = 0; si2 < surfaceBoxes.length; si2++) {
       var sb2 = surfaceBoxes[si2];
@@ -3023,6 +3027,10 @@ function tickDroppedArts(dt) {
     if (da.onGround) continue;
     da.velocity.y += GRAVITY * dt;
     da.group.position.addScaledVector(da.velocity, dt);
+    /* Cap lateral speed to prevent tunnelling */
+    var maxLat = 18;
+    if (Math.abs(da.velocity.x) > maxLat) da.velocity.x = Math.sign(da.velocity.x) * maxLat;
+    if (Math.abs(da.velocity.z) > maxLat) da.velocity.z = Math.sign(da.velocity.z) * maxLat;
     /* Gentle spin while flying */
     var spinRate = (Math.abs(da.velocity.x) + Math.abs(da.velocity.z)) * 0.4;
     da.group.rotation.y += spinRate * dt;
@@ -3069,19 +3077,15 @@ function tickArms(dt) {
   var targetGrab = isDragging ? 1.0 : 0.0;
   grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
 
-  /* Swing amplitude fades out when not moving */
-  var swingAmp = moving ? 0.18 : 0;
+  /* Walking swing only — no grab lunge forward */
+  var swingAmp = moving ? 0.15 : 0;
   var swingR =  Math.sin(walkSwing)            * swingAmp;
   var swingL =  Math.sin(walkSwing + Math.PI)  * swingAmp;
 
-  /* Grab offset — arms extend forward and up */
-  var grabZ = grabAnim * -0.10;
-  var grabY = grabAnim *  0.06;
-
-  armRGroup.position.set( 0.24, -0.30 + grabY, -0.34 + grabZ);
-  armLGroup.position.set(-0.24, -0.30 + grabY, -0.34 + grabZ);
-  armRGroup.rotation.x = swingR - grabAnim * 0.38;
-  armLGroup.rotation.x = swingL - grabAnim * 0.38;
+  armRGroup.position.set( 0.21, -0.34, -0.30);
+  armLGroup.position.set(-0.21, -0.34, -0.30);
+  armRGroup.rotation.x = swingR;
+  armLGroup.rotation.x = swingL;
 }
 
 /* ── Reset gallery ────────────────────────────────────────────────────────── */

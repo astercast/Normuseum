@@ -8,8 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="./assets/index-B92eRHwd.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BMB3zw0e.css">
+    <script type="module" crossorigin src="./assets/index-CPrBihsf.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-9Q9kstSG.css">
   </head>
   <body>
     <canvas id="scene" role="img" aria-label="3D gallery view"></canvas>
@@ -88,7 +88,7 @@
             normuseum is a first-person 3D voxel gallery for the
             <a href="https://normies.art" target="_blank" rel="noopener">Normies</a>
             NFT collection on ethereum mainnet. paste any wallet address or ENS name
-            — multiple wallets supported, comma-separated — and walk through your
+            and walk through your
             collection on the walls of a minimal white-cube gallery.
           </p>
           <p class="about-body">
@@ -103,16 +103,17 @@
               normiesarchive.xyz ↗
               <span class="about-pill-sub">pixel history explorer — also by aster0x</span>
             </a>
-            <a class="about-pill" href="https://x.com/aster0x" target="_blank" rel="noopener">
-              @aster0x on X ↗
-              <span class="about-pill-sub">creator &amp; developer</span>
-            </a>
             <a class="about-pill" href="https://normies.art" target="_blank" rel="noopener">
               normies.art ↗
               <span class="about-pill-sub">official collection</span>
             </a>
           </div>
           <p class="about-footer-text">a 3D gallery experience · ethereum mainnet</p>
+          <p class="about-footer-text" style="margin-top:12px;line-height:1.6">
+            This was made out of Normie love. Feel like donating?<br/>
+            <span style="font-weight:600;color:var(--text)">astercast.eth</span>
+            &nbsp;←&nbsp; thank you very much for all support and feedback!
+          </p>
         </div>
       </main>
     </div>
@@ -174,14 +175,27 @@
         <button id="exitBtn" class="hud-exit" type="button">✕ exit</button>
       </div>
       <div id="helpPanel">
+        <div class="help-section-title">controls</div>
         <div class="ctrl"><kbd>W A S D</kbd><span>move</span></div>
         <div class="ctrl"><kbd>mouse</kbd><span>look</span></div>
         <div class="ctrl"><kbd>shift</kbd><span>sprint</span></div>
         <div class="ctrl"><kbd>space</kbd><span>jump</span></div>
-        <div class="ctrl"><kbd>E</kbd><span>interact / sit</span></div>
+        <div class="ctrl"><kbd>right click</kbd><span>grab / throw normie</span></div>
+        <div class="ctrl"><kbd>E</kbd><span>interact / sit / history</span></div>
         <div class="ctrl"><kbd>F</kbd><span>fullscreen</span></div>
         <div class="ctrl"><kbd>M</kbd><span>music</span></div>
-        <div class="ctrl"><kbd>esc</kbd><span>unlock</span></div>
+        <div class="ctrl"><kbd>esc</kbd><span>unlock mouse</span></div>
+        <div class="help-divider"></div>
+        <div class="help-section-title">features</div>
+        <div class="help-tip">grab any normie off the wall with right click — throw it, bump into it, or bring it back near its wall to snap it home</div>
+        <div class="help-tip">normies with edit history have a small button below them — press <kbd>E</kbd> while looking at it to watch their pixel changes animate</div>
+        <div class="help-tip">find benches to sit on — press <kbd>E</kbd> to sit and <kbd>E</kbd> again to stand</div>
+        <div class="help-tip">the podium button toggles between voxel and framed flat view</div>
+        <div class="help-divider"></div>
+        <div class="help-section-title">secrets</div>
+        <div class="help-tip">there are hidden buttons scattered around the first room — look closely at the fruit pedestals and the walls</div>
+        <div class="help-tip">one button causes something dramatic. another opens a hidden door</div>
+        <div class="help-tip">inside the hidden room waits normie #9098 with a question</div>
       </div>
       <div id="progress-wrap">
         <div id="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"></div>
