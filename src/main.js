@@ -580,14 +580,14 @@ function buildRoom(ri) {
     var bench = buildBench(); bench.position.set(cx, 0, zMid); g.add(bench);
     /* Bench surface collision box (seat top at y = 0.52, camera eye at +1.7) */
     surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: zMid - 0.27, maxZ: zMid + 0.27, topY: 0.52 + 1.7 });
-    /* Bench XZ block — prevents walking through legs/frame at floor level */
-    blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: zMid - 0.31, maxZ: zMid + 0.31 });
+    /* Bench XZ block — solid at floor level; blockBox.topY lets player jump over once camera exceeds it */
+    blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: zMid - 0.31, maxZ: zMid + 0.31, topY: 0.52 + 1.7 });
     /* Second bench further back for large rooms */
     if (room.roomLen > 22) {
       var bench2 = buildBench(); var bz2 = zMid - room.roomLen * 0.22;
       bench2.position.set(cx, 0, bz2); g.add(bench2);
       surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: bz2 - 0.27, maxZ: bz2 + 0.27, topY: 0.52 + 1.7 });
-      blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: bz2 - 0.31, maxZ: bz2 + 0.31 });
+      blockBoxes.push({ minX: cx - 1.05, maxX: cx + 1.05, minZ: bz2 - 0.31, maxZ: bz2 + 0.31, topY: 0.52 + 1.7 });
     }
   }
 
@@ -667,14 +667,16 @@ function buildRoom(ri) {
   g.add(podium);
   /* Register the button mesh for this room's podium */
   if (ri === 0) podiumBtnMesh = podium.userData.btnMesh;
-  /* Podium surface collision box (top at y ≈ 1.08) */
+  /* Podium surface + solid XZ block (topY: 99 = never jump-over) */
   surfaceBoxes.push({ minX: podX - 0.36, maxX: podX + 0.36, minZ: podZ - 0.36, maxZ: podZ + 0.36, topY: 1.08 + 1.7 });
+  blockBoxes.push({ minX: podX - 0.40, maxX: podX + 0.40, minZ: podZ - 0.40, maxZ: podZ + 0.40, topY: 99 });
 
   /* ── Decorative fruit pedestals — apple and/or orange ── */
   var fruitPedestals = buildFruitPedestals(ri, cx, room.zStart, room.zEnd, WALL_X);
   fruitPedestals.forEach(function(fp) {
     g.add(fp.group);
     surfaceBoxes.push({ minX: fp.x - 0.36, maxX: fp.x + 0.36, minZ: fp.z - 0.36, maxZ: fp.z + 0.36, topY: 1.08 + 1.7 });
+    blockBoxes.push({ minX: fp.x - 0.40, maxX: fp.x + 0.40, minZ: fp.z - 0.40, maxZ: fp.z + 0.40, topY: 99 });
   });
 
   /* ── Secret explode button — on the apple pedestal ── */
@@ -3365,9 +3367,8 @@ if (isTouch) {
 }
 
 /* ── AABB collision ───────────────────────────────────────────────────────── */
-function clampToWalkZones(px, pz) {
+function clampToWalkZones(px, pz, py) {
   /* First clamp to valid walk area */
-  var result;
   var inZone = false;
   for (var i = 0; i < walkZones.length; i++) {
     var z = walkZones[i];
@@ -3384,9 +3385,10 @@ function clampToWalkZones(px, pz) {
     }
     px = bestX; pz = bestZ;
   }
-  /* Then push out of any solid block boxes (bench legs, etc.) */
+  /* Push out of solid block boxes — skip if camera is above the box top (jumping over) */
   for (var bi = 0; bi < blockBoxes.length; bi++) {
     var b = blockBoxes[bi];
+    if (py !== undefined && py >= b.topY) continue;  /* in the air above this obstacle */
     if (px > b.minX && px < b.maxX && pz > b.minZ && pz < b.maxZ) {
       /* Push toward nearest face */
       var dLeft  = px - b.minX, dRight = b.maxX - px;
@@ -3419,7 +3421,7 @@ function move(dt) {
       camera.position.z += Math.cos(mobileYaw) * fwd - Math.sin(mobileYaw) * right;
       isMoving = Math.abs(nx) > 0.15 || Math.abs(ny) > 0.15;
     }
-    var cl = clampToWalkZones(camera.position.x, camera.position.z);
+    var cl = clampToWalkZones(camera.position.x, camera.position.z, camera.position.y);
     camera.position.x = cl.x; camera.position.z = cl.z;
   } else {
     isSprinting = keys.shift;
@@ -3434,7 +3436,7 @@ function move(dt) {
     controls.moveRight(vel.x);
     controls.moveForward(vel.z);
     var p = camera.position;
-    var cl2 = clampToWalkZones(p.x, p.z);
+    var cl2 = clampToWalkZones(p.x, p.z, p.y);
     p.x = cl2.x; p.z = cl2.z;
   }
 
@@ -3466,7 +3468,7 @@ function move(dt) {
     for (var si2 = 0; si2 < surfaceBoxes.length; si2++) {
       var sb2 = surfaceBoxes[si2];
       if (px2 >= sb2.minX && px2 <= sb2.maxX && pz2 >= sb2.minZ && pz2 <= sb2.maxZ) {
-        if (GROUND_Y >= sb2.topY - 0.02) {  /* tight threshold — only stay on surface if already standing on it */
+        if (GROUND_Y >= sb2.topY - 0.01) {  /* tight threshold — only stay on surface if already standing on it */
           floorY = Math.max(floorY, sb2.topY);
         }
       }
