@@ -3117,7 +3117,17 @@ function playFootstep() {
 /* ── Background music ─────────────────────────────────────────────────────── */
 var bgMusic = null, musicPlaying = false;
 var musicBtn = $("musicBtn");
-function initMusic() { if (bgMusic) return; bgMusic = new Audio("./bgmusic.mp3"); bgMusic.loop = true; bgMusic.volume = musicVolume; }
+function initMusic() {
+  if (bgMusic) return;
+  bgMusic = new Audio("./bgmusic.mp3");
+  bgMusic.loop = true;
+  bgMusic.volume = musicVolume;
+  /* Jump to a random point once duration is known */
+  bgMusic.addEventListener("loadedmetadata", function() {
+    var dur = bgMusic.duration;
+    if (dur && isFinite(dur)) bgMusic.currentTime = Math.random() * dur;
+  }, { once: true });
+}
 function toggleMusic() {
   initMusic();
   if (musicPlaying) { bgMusic.pause(); musicPlaying = false; }
