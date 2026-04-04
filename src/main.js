@@ -930,7 +930,7 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
   if (voxels.length) {
     var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
     var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
-    var m4 = new THREE.Matrix4(), col = new THREE.Color();
+    var m4 = new THREE.Matrix4();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
       var v = voxels[vi];
@@ -938,11 +938,8 @@ function buildVoxelArtwork(tokenId, rgbaData, meta, roomIdx) {
       scaleV.set(1, 1, v.depth);
       m4.compose(posV, quat, scaleV);
       inst.setMatrixAt(vi, m4);
-      col.setRGB(v.r, v.g, v.b);
-      inst.setColorAt(vi, col);
     }
     inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.castShadow = inst.receiveShadow = true;
     inst.userData.isVoxel = true;
     group.add(inst);
@@ -1118,7 +1115,7 @@ function buildVoxelFrame(rgbaData) {
   if (!voxels.length) return null;
   var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
   var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
-  var m4 = new THREE.Matrix4(), col = new THREE.Color();
+  var m4 = new THREE.Matrix4();
   var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
   for (var vi = 0; vi < voxels.length; vi++) {
     var v = voxels[vi];
@@ -1126,11 +1123,8 @@ function buildVoxelFrame(rgbaData) {
     scaleV.set(1, 1, v.depth);
     m4.compose(posV, quat, scaleV);
     inst.setMatrixAt(vi, m4);
-    col.setRGB(v.r, v.g, v.b);
-    inst.setColorAt(vi, col);
   }
   inst.instanceMatrix.needsUpdate = true;
-  if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   inst.castShadow = inst.receiveShadow = true;
   inst.userData.isVoxel = true;
   return inst;
@@ -1205,14 +1199,14 @@ function stopHistoryAnim(animIdx) {
   var anim = historyAnims[animIdx];
   if (!anim) return;
 
-  /* Remove current animation mesh from group */
+  /* Remove current animation mesh from group (don't dispose here — arrays own the meshes) */
   var toRemove = [];
   anim.group.traverse(function(c) {
     if (c.userData && c.userData._historyAnim) toRemove.push(c);
   });
-  toRemove.forEach(function(c) { anim.group.remove(c); dispose(c); });
+  toRemove.forEach(function(c) { anim.group.remove(c); });
 
-  /* Dispose all pre-built meshes */
+  /* Dispose all pre-built meshes (single pass — no double-free) */
   anim.voxelMeshes.forEach(function(m) { if (m) dispose(m); });
   anim.flatMeshes.forEach(function(m) { if (m) dispose(m); });
 
@@ -1233,22 +1227,22 @@ function tickHistoryAnims(dt) {
     if (anim.elapsed < anim.interval) continue;
     anim.elapsed -= anim.interval;
 
-    /* Remove old frame mesh */
+    /* Advance frame index */
+    var nextIdx = (anim.frameIdx + 1) % anim.voxelMeshes.length;
+    var showVoxel = !framesVisible;
+    var nextMesh = showVoxel ? anim.voxelMeshes[nextIdx] : anim.flatMeshes[nextIdx];
+
+    /* Add NEW mesh first (no blank-frame gap), then remove old */
+    if (nextMesh) {
+      nextMesh.userData._historyAnim = true;
+      anim.group.add(nextMesh);
+    }
     var old = [];
     anim.group.traverse(function(c) {
-      if (c.userData && c.userData._historyAnim) old.push(c);
+      if (c.userData && c.userData._historyAnim && c !== nextMesh) old.push(c);
     });
     old.forEach(function(c) { anim.group.remove(c); });
-    /* Don't dispose old meshes — they're reused from the array */
-
-    /* Advance frame (loop) */
-    anim.frameIdx = (anim.frameIdx + 1) % anim.voxelMeshes.length;
-    var showVoxel = !framesVisible;
-    var mesh = showVoxel ? anim.voxelMeshes[anim.frameIdx] : anim.flatMeshes[anim.frameIdx];
-    if (mesh) {
-      mesh.userData._historyAnim = true;
-      anim.group.add(mesh);
-    }
+    anim.frameIdx = nextIdx;
   }
 }
 
@@ -1626,9 +1620,9 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
     }
   }
   if (voxels.length) {
-    var mat = new THREE.MeshStandardMaterial({ roughness:0.4, metalness:0.06, vertexColors:true });
+    var mat = new THREE.MeshPhysicalMaterial({ color: "#060606", roughness: 0.04, metalness: 0.08, clearcoat: 1.0, clearcoatRoughness: 0.03 });
     var inst = new THREE.InstancedMesh(sharedVoxelGeo, mat, voxels.length);
-    var m4 = new THREE.Matrix4(), col = new THREE.Color();
+    var m4 = new THREE.Matrix4();
     var scaleV = new THREE.Vector3(), posV = new THREE.Vector3(), quat = new THREE.Quaternion();
     for (var vi = 0; vi < voxels.length; vi++) {
       var v = voxels[vi];
@@ -1636,11 +1630,8 @@ async function buildHiddenArt(parentGroup, tokenId, wallX, centerZ, roomH) {
       scaleV.set(ART_SCALE, ART_SCALE, v.depth);
       m4.compose(posV, quat, scaleV);
       inst.setMatrixAt(vi, m4);
-      col.setRGB(v.r, v.g, v.b);
-      inst.setColorAt(vi, col);
     }
     inst.instanceMatrix.needsUpdate = true;
-    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.castShadow = true;
     /* Orient facing left (into the alcove, away from the back wall) */
     var artGroup2 = new THREE.Group();
@@ -1813,10 +1804,15 @@ function checkSecretButtonInteraction() {
     if (secretBtnHovered) { secretBtnHovered = false; }
     return;
   }
-  raycaster.setFromCamera(screenCenter, camera);
-  var hits = raycaster.intersectObject(secretBtnMesh, true);
-  var hit = hits.length > 0 && hits[0].distance < 2.5;
-  secretBtnHovered = hit;
+  if (isTouch) {
+    var wp7 = new THREE.Vector3();
+    secretBtnMesh.getWorldPosition(wp7);
+    secretBtnHovered = camera.position.distanceTo(wp7) < 4.0;
+  } else {
+    raycaster.setFromCamera(screenCenter, camera);
+    var hits = raycaster.intersectObject(secretBtnMesh, true);
+    secretBtnHovered = hits.length > 0 && hits[0].distance < 4.0;
+  }
   /* No visible hint — intentionally secret */
 }
 
@@ -2010,14 +2006,13 @@ function pressButton() {
     if (artGrp.userData && artGrp.userData.tokenId && animatingTokens[artGrp.userData.tokenId]) {
       var anim = historyAnims.find(function(a) { return a.tokenId === artGrp.userData.tokenId; });
       if (anim) {
-        /* Remove current history mesh */
-        var oldH = [];
-        artGrp.traverse(function(c) { if (c.userData && c.userData._historyAnim) oldH.push(c); });
-        oldH.forEach(function(c) { artGrp.remove(c); });
-        /* Add correct type for new mode */
+        /* Add new mesh first, then remove old (prevents blank-frame flash) */
         var showVoxel = !framesVisible;
-        var mesh = showVoxel ? anim.voxelMeshes[anim.frameIdx] : anim.flatMeshes[anim.frameIdx];
-        if (mesh) { mesh.userData._historyAnim = true; artGrp.add(mesh); }
+        var newMesh = showVoxel ? anim.voxelMeshes[anim.frameIdx] : anim.flatMeshes[anim.frameIdx];
+        if (newMesh) { newMesh.userData._historyAnim = true; artGrp.add(newMesh); }
+        var oldH = [];
+        artGrp.traverse(function(c) { if (c.userData && c.userData._historyAnim && c !== newMesh) oldH.push(c); });
+        oldH.forEach(function(c) { artGrp.remove(c); });
       }
       /* Keep original children hidden — history owns the display */
       continue;
