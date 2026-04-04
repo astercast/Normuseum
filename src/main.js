@@ -278,12 +278,12 @@ var currentRoomIdx = -1;
 function planLayout(totalCount) {
   rooms = [];
   walkZones = [];
-  var numRooms = Math.max(1, Math.ceil(totalCount / NORMIES_PER_ROOM));
+  var numRooms = 1;  /* always a single room — it just grows longer */
   var slotsUsed = 0;
   var zCursor = 0;
 
   for (var ri = 0; ri < numRooms; ri++) {
-    var count = Math.min(NORMIES_PER_ROOM, totalCount - slotsUsed);
+    var count = totalCount;
     /* 4-wall layout:
        - long walls (left + right) share most slots: slotsPerSide each
        - end walls (front + back) cap at 2 each
@@ -2588,6 +2588,48 @@ function showLandingPage() {
 }
 aboutBtn.addEventListener("click", function(e) { e.preventDefault(); showAboutPage(); });
 homeBtn.addEventListener("click", function(e) { e.preventDefault(); showLandingPage(); });
+
+/* Mobile duplicate nav buttons */
+(function() {
+  var ham    = $("navHamburger");
+  var drop   = $("navDropdown");
+  var themM  = $("themeToggleMobile");
+  var aboutM = $("aboutBtnMobile");
+  var homeM  = $("homeBtnMobile");
+  if (ham && drop) {
+    ham.addEventListener("click", function() {
+      var open = drop.classList.toggle("open");
+      ham.setAttribute("aria-expanded", open ? "true" : "false");
+      drop.setAttribute("aria-hidden", open ? "false" : "true");
+    });
+    document.addEventListener("click", function(e) {
+      if (!drop.classList.contains("open")) return;
+      if (!drop.contains(e.target) && e.target !== ham && !ham.contains(e.target)) {
+        drop.classList.remove("open");
+        ham.setAttribute("aria-expanded", "false");
+        drop.setAttribute("aria-hidden", "true");
+      }
+    });
+  }
+  if (themM) {
+    themM.addEventListener("click", function() {
+      var isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      var next = isDark ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("normuseum-theme", next);
+    });
+  }
+  if (aboutM) aboutM.addEventListener("click", function(e) {
+    e.preventDefault();
+    if (drop) { drop.classList.remove("open"); ham && ham.setAttribute("aria-expanded", "false"); }
+    showAboutPage();
+  });
+  if (homeM) homeM.addEventListener("click", function(e) {
+    e.preventDefault();
+    if (drop) { drop.classList.remove("open"); ham && ham.setAttribute("aria-expanded", "false"); }
+    showLandingPage();
+  });
+})();
 exitBtn.addEventListener("click", exitMuseum);
 loadBtn.addEventListener("click", function() { loadMuseumForWallets(walletInput.value); });
 walletInput.addEventListener("keydown", function(e) { if (e.key === "Enter") loadMuseumForWallets(walletInput.value); });
@@ -2624,6 +2666,60 @@ themeToggle.addEventListener("click", function() {
   document.documentElement.setAttribute("data-theme", next);
   localStorage.setItem("normuseum-theme", next);
 });
+
+/* Touch action buttons — jump / interact / grab */
+(function() {
+  var jumpBtn     = $("touchJumpBtn");
+  var interactBtn = $("touchInteractBtn");
+  var grabBtn     = $("touchGrabBtn");
+  if (jumpBtn) {
+    jumpBtn.addEventListener("touchstart", function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (!isJumping) { isJumping = true; jumpVelocity = JUMP_FORCE; }
+    }, { passive: false });
+  }
+  if (interactBtn) {
+    interactBtn.addEventListener("touchstart", function(e) {
+      e.preventDefault(); e.stopPropagation();
+      tryInteract();
+    }, { passive: false });
+  }
+  if (grabBtn) {
+    grabBtn.addEventListener("touchstart", function(e) {
+      e.preventDefault(); e.stopPropagation();
+      if (isDragging) {
+        /* drop / throw */
+        isDragging = false;
+        if (draggedArt) {
+          draggedArt.userData.dragging = false;
+          droppedArts.push({ group: draggedArt, velocity: dragVelocity.clone().multiplyScalar(8), onGround: false });
+          draggedArt = null;
+        }
+      } else {
+        /* try to grab nearest art */
+        var bestDist = 3.5, bestArt = null;
+        for (var _i = 0; _i < artGroup.children.length; _i++) {
+          var _ag = artGroup.children[_i];
+          var _d = camera.position.distanceTo(_ag.position);
+          if (_d < bestDist) { bestDist = _d; bestArt = _ag; }
+        }
+        for (var _j = 0; _j < droppedArts.length; _j++) {
+          var _dg = droppedArts[_j].group;
+          var _dd = camera.position.distanceTo(_dg.position);
+          if (_dd < bestDist) { bestDist = _dd; bestArt = _dg; }
+        }
+        if (bestArt) {
+          draggedArt = bestArt;
+          draggedArt.userData.dragging = true;
+          isDragging = true;
+          dragOffset.subVectors(draggedArt.position, camera.position);
+          /* remove from droppedArts if present */
+          droppedArts = droppedArts.filter(function(da) { return da.group !== draggedArt; });
+        }
+      }
+    }, { passive: false });
+  }
+})();
 
 /* ── Fullscreen ───────────────────────────────────────────────────────────── */
 function toggleFullscreen() {
@@ -2852,7 +2948,7 @@ if (!isTouch) {
 }
 
 /* ── Touch controls ───────────────────────────────────────────────────────── */
-var JOY_R = 52, LOOK_SENS = 0.0038;
+var JOY_R = 36, LOOK_SENS = 0.0038;
 var joy  = { on: false, id: -1, sx: 0, sy: 0, dx: 0, dy: 0 };
 var look = { on: false, id: -1, lx: 0, ly: 0 };
 function joyUI(nx, ny) {
