@@ -12,15 +12,15 @@ const VOXEL_SIZE       = 0.055;
 const GRID             = 40;
 const CELL             = 2.2 / GRID;
 const ART_W = 2.4, ART_H = 2.4;
-const ROOM_W = 14, ROOM_H = 7.0;
-const SLOT_SPACING = 3.6;
+const ROOM_W = 18, ROOM_H = 8.5;
+const SLOT_SPACING = 4.2;
 
 /* ── Multi-room layout ────────────────────────────────────────────────────── */
 const NORMIES_PER_ROOM = 20;
 const SHIFT_X          = ROOM_W + 8;
 const CORR_Z           = 8;
-const CORR_W           = 4.5;
-const ROOM_PAD         = 5;
+const CORR_W           = 5.0;
+const ROOM_PAD         = 6;
 
 /* ── Room lifecycle (lazy loading) ────────────────────────────────────────── */
 const ROOM_BUILD_RANGE  = 2;
@@ -32,6 +32,17 @@ let framesVisible = false;
 let podiumBtnMesh = null;
 let buttonHovered = false;
 let btnAnimating = false;
+
+/* ── Secret explode button ────────────────────────────────────────────────── */
+var secretBtnMesh = null;
+var secretBtnHovered = false;
+var explodeActive = false;
+var explodeParticles = [];  /* { mesh, vel, life } */
+var explodeResetTimer = 0;
+
+/* ── Hint auto-dismiss ────────────────────────────────────────────────────── */
+var hintDismissTimer = 0;
+var HINT_PERSIST = 4.0;  /* seconds before hint fades if still showing */
 
 /* ── Jump physics ─────────────────────────────────────────────────────────── */
 var jumpVelocity = 0;
@@ -45,6 +56,9 @@ var isSitting = false;
 var benchPositions = [];
 var benchHovered = false;
 var nearBenchIdx = -1;
+
+/* ── Surface collision (stand on benches/podiums) ─────────────────────────── */
+var surfaceBoxes = [];  /* { minX, maxX, minZ, maxZ, topY } */
 
 /* ── Volume controls ──────────────────────────────────────────────────────── */
 var musicVolume = 0.25;
@@ -66,6 +80,13 @@ var historyCache  = new Map();  // tokenId → { edits: [...] }
 /* ── History animation state ──────────────────────────────────────────────── */
 const NORMIES_ARCHIVE = "https://normiesarchive.xyz";
 var historyAnims = [];   // active history animations: { tokenId, group, frames[], frameIdx, elapsed, interval }
+
+/* ── Dragged normie physics ───────────────────────────────────────────────── */
+var draggedArt = null;       /* the Three.js group being dragged */
+var dragOffset = new THREE.Vector3(); /* offset from camera ray to art pivot */
+var isDragging = false;
+var dragVelocity = new THREE.Vector3();
+var droppedArts = [];        /* { group, velocity, onGround } */
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -219,15 +240,24 @@ function planLayout(totalCount) {
 
   for (var ri = 0; ri < numRooms; ri++) {
     var count = Math.min(NORMIES_PER_ROOM, totalCount - slotsUsed);
-    var slotsPerSide = Math.ceil(count / 2);
-    var roomLen = slotsPerSide * SLOT_SPACING + ROOM_PAD * 2;
+    /* 4-wall layout:
+       - long walls (left + right) share most slots: slotsPerSide each
+       - end walls (front + back) cap at 2 each
+       Solve: 2*slotsPerSide + 2*slotsPerEnd = count
+       Use: slotsPerEnd = min(2, floor(count/8)), slotsPerSide = ceil((count - 2*slotsPerEnd)/2) */
+    var slotsPerEnd  = Math.min(2, Math.floor(count / 8));
+    var slotsPerSide = Math.ceil((count - slotsPerEnd * 2) / 2);
+    /* roomLen driven by the long-wall slots */
+    var roomLen = Math.max(slotsPerSide * SLOT_SPACING + ROOM_PAD * 2,
+                           slotsPerEnd  * SLOT_SPACING + ROOM_PAD * 2 + 4);
     var cx = (ri % 2 === 0) ? 0 : SHIFT_X;
     var zStart = zCursor;
     var zEnd = zCursor - roomLen;
 
     rooms.push({
       cx: cx, zStart: zStart, zEnd: zEnd, roomLen: roomLen,
-      slotsPerSide: slotsPerSide, slotOffset: slotsUsed, slotCount: count,
+      slotsPerSide: slotsPerSide, slotsPerEnd: slotsPerEnd,
+      slotOffset: slotsUsed, slotCount: count,
       built: false, loaded: false, loading: false, prefetching: false, _loadToken: null,
       group: null, corridorGroup: null, artSlots: [],
     });
@@ -373,7 +403,7 @@ function buildRoom(ri) {
   var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, ROOM_H, zMid); g.add(ceil);
 
-  /* ── Side walls — all warm limestone ── */
+  /* ── Side walls — clean white gallery walls ── */
   var wallGeo = new THREE.PlaneGeometry(room.roomLen, ROOM_H);
   var lw = new THREE.Mesh(wallGeo, wallMat);
   lw.rotation.y = Math.PI / 2; lw.position.set(cx - WALL_X, ROOM_H / 2, zMid); lw.receiveShadow = true; g.add(lw);
@@ -394,131 +424,53 @@ function buildRoom(ri) {
     buildDoorwayWall(g, cx, room.zEnd, 0, ROOM_W, ROOM_H);
   }
 
-  /* ── Wainscoting on both side walls ── */
-  var wainH = 1.05;
-  [-WALL_X, WALL_X].forEach(function(x, idx) {
-    var wainGeo = new THREE.PlaneGeometry(room.roomLen, wainH);
-    var w = new THREE.Mesh(wainGeo, panelMat);
-    w.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
-    w.position.set(cx + x + (idx === 0 ? 0.012 : -0.012), wainH / 2, zMid); g.add(w);
+  /* ── Thin baseboard — subtle, doesn't interfere with art ── */
+  [-WALL_X + 0.025, WALL_X - 0.025].forEach(function(x) {
+    var sk = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, room.roomLen + 0.1), baseMat);
+    sk.position.set(cx + x, 0.075, zMid); g.add(sk);
   });
 
-  /* ── Chair rail (brass) ── */
-  var railGeo = new THREE.BoxGeometry(0.065, 0.055, room.roomLen + 0.2);
-  [-WALL_X + 0.033, WALL_X - 0.033].forEach(function(x) {
-    var rail = new THREE.Mesh(railGeo, mouldMat); rail.position.set(cx + x, wainH, zMid); g.add(rail);
-  });
-
-  /* ── Crown moulding — three-piece classical profile ── */
-  [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
-    /* Bed mould */
-    var m1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, room.roomLen + 0.5), mouldMat);
-    m1.position.set(cx + x, ROOM_H - 0.03, zMid); g.add(m1);
-    /* Cornice shelf */
-    var m2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.045, room.roomLen + 0.5), mouldMat);
-    m2.position.set(cx + x, ROOM_H - 0.072, zMid); g.add(m2);
-    /* Cyma recta */
-    var m3 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, room.roomLen + 0.5), mouldMat);
-    m3.position.set(cx + x, ROOM_H - 0.13, zMid); g.add(m3);
-  });
-
-  /* ── Baseboard — two-part ── */
-  [-WALL_X + 0.04, WALL_X - 0.04].forEach(function(x) {
-    var sk1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, room.roomLen + 0.12), baseMat);
-    sk1.position.set(cx + x, 0.14, zMid); g.add(sk1);
-    var sk2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, room.roomLen + 0.12), mouldMat);
-    sk2.position.set(cx + x, 0.3, zMid); g.add(sk2);
-  });
-
-  /* ── Skylights — grand recessed lanterns with deep coffer surround ── */
-  var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture(), transparent: false });
-  var skylightCount = Math.max(1, Math.floor(room.roomLen / 9));
-  for (var ski = 0; ski < skylightCount; ski++) {
-    var sz = room.zStart - ROOM_PAD - (ski + 0.5) * ((room.roomLen - ROOM_PAD * 2) / skylightCount);
-    var surW = 5.2, surL = 2.8;
-    var cofferDepth = 0.28;  /* how far the lantern recesses into the ceiling */
-
-    /* Sky pane flush with ceiling underside */
-    var pane = new THREE.Mesh(new THREE.PlaneGeometry(surW - 0.22, surL - 0.22), skyMat);
-    pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.005, sz); g.add(pane);
-
-    /* Coffer walls — four sides of the recessed box */
-    var cofferMat = new THREE.MeshStandardMaterial({ color: "#f5f0ea", roughness: 0.88 });
-    var sides = [
-      /* [cx_offset, z_offset, rx, ry, w, h] */
-      [0,  -surL/2, 0,   0,         surW, cofferDepth],  /* near  */
-      [0,   surL/2, 0,   Math.PI,   surW, cofferDepth],  /* far   */
-      [-surW/2, 0, 0,  -Math.PI/2,  surL, cofferDepth],  /* left  */
-      [ surW/2, 0, 0,   Math.PI/2,  surL, cofferDepth],  /* right */
-    ];
-    sides.forEach(function(s) {
-      var p = new THREE.Mesh(new THREE.PlaneGeometry(s[4], s[5]), cofferMat);
-      p.rotation.set(s[2], s[3], 0);
-      p.position.set(cx + s[0], ROOM_H - cofferDepth/2, sz + s[1]);
-      g.add(p);
-    });
-
-    /* Glazing bars — elegant bronze grid (3×5) */
-    var barMat2 = trimMat;
-    /* Longitudinal rails */
-    [-surL/2, 0, surL/2].forEach(function(oz) {
-      var bar = new THREE.Mesh(new THREE.BoxGeometry(surW, 0.04, 0.055), barMat2);
-      bar.position.set(cx, ROOM_H - 0.012, sz + oz); g.add(bar);
-    });
-    /* Transverse mullions */
-    [-surW*0.4, -surW*0.15, surW*0.15, surW*0.4].forEach(function(ox) {
-      var bar = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.04, surL), barMat2);
-      bar.position.set(cx + ox, ROOM_H - 0.012, sz); g.add(bar);
-    });
-    /* Outer frame */
-    var frameMat3 = new THREE.MeshStandardMaterial({ color: "#8c7850", roughness: 0.15, metalness: 0.55 });
-    [[surW + 0.1, 0.07, surL + 0.1, 0]] /* perimeter channel */.forEach(function() {
-      var t = 0.065;
-      [[surW/2+t/2, 0, t, surL+t*2], [-surW/2-t/2, 0, t, surL+t*2],
-       [0,  surL/2+t/2, surW+t*2, t], [0, -surL/2-t/2, surW+t*2, t]].forEach(function(b) {
-        var rim = new THREE.Mesh(new THREE.BoxGeometry(b[2], 0.05, b[3]), frameMat3);
-        rim.position.set(cx + b[0], ROOM_H - 0.014, sz + b[1]); g.add(rim);
-      });
-    });
-    /* Sky fill — brighter RecArea-style fill from above */
-    var skyLight = new THREE.PointLight(0xb8d8f8, 1.0, 18);
-    skyLight.position.set(cx, ROOM_H - 0.2, sz); g.add(skyLight);
-    /* Warm bounce off floor */
-    var bounceLight = new THREE.PointLight(0xfff0d8, 0.22, 10);
-    bounceLight.position.set(cx, 1.2, sz); g.add(bounceLight);
+  /* ── Museum ceiling wash lighting — even diffused downlights ── */
+  var washCount = Math.max(2, Math.floor(room.roomLen / 5));
+  for (var wi = 0; wi < washCount; wi++) {
+    var wz = room.zStart - 2 - wi * ((room.roomLen - 4) / Math.max(1, washCount - 1));
+    /* Recessed downlight housing */
+    var housing = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.06, 16), trackMat);
+    housing.position.set(cx - WALL_X + 2.0, ROOM_H - 0.03, wz); g.add(housing);
+    var housing2 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.06, 16), trackMat);
+    housing2.position.set(cx + WALL_X - 2.0, ROOM_H - 0.03, wz); g.add(housing2);
+    /* Warm wash spots aimed at the walls — wider, softer angle */
+    var leftWallX  = cx - WALL_X + 0.12;
+    var rightWallX = cx + WALL_X - 0.12;
+    var spotL = new THREE.SpotLight(0xfff4e8, 3.2, 12, Math.PI / 5.5, 0.55, 1.2);
+    spotL.position.set(cx - WALL_X + 2.0, ROOM_H - 0.1, wz);
+    spotL.target.position.set(leftWallX, 3.2, wz);
+    g.add(spotL); g.add(spotL.target);
+    var spotR = new THREE.SpotLight(0xfff4e8, 3.2, 12, Math.PI / 5.5, 0.55, 1.2);
+    spotR.position.set(cx + WALL_X - 2.0, ROOM_H - 0.1, wz);
+    spotR.target.position.set(rightWallX, 3.2, wz);
+    g.add(spotR); g.add(spotR.target);
   }
 
-  /* ── Ceiling track lighting ── */
-  var slotZStart = room.zStart - ROOM_PAD;
-  for (var si = 0; si < room.slotsPerSide; si++) {
-    var tz = slotZStart - si * SLOT_SPACING;
-    /* Track rail */
-    var rail2 = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 1.0, 0.05, 0.06), trackMat);
-    rail2.position.set(cx, ROOM_H - 0.04, tz); g.add(rail2);
-    /* Spotlights: one aimed at left wall art, one at right wall art */
-    var leftWallX  = cx - WALL_X + 0.12; /* surface of left wall */
-    var rightWallX = cx + WALL_X - 0.12; /* surface of right wall */
-    [
-      { fixtureX: cx - WALL_X + 1.0, targetX: leftWallX  },
-      { fixtureX: cx + WALL_X - 1.0, targetX: rightWallX },
-    ].forEach(function(sp) {
-      var fix = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.18, 12), trackMat);
-      fix.position.set(sp.fixtureX, ROOM_H - 0.13, tz); g.add(fix);
-      var spot = new THREE.SpotLight(0xfff2d8, 2.4, 8.0, Math.PI / 8, 0.3, 1.5);
-      spot.position.set(sp.fixtureX, ROOM_H - 0.22, tz);
-      spot.target.position.set(sp.targetX, 3.2, tz);
-      g.add(spot);
-      g.add(spot.target);
-    });
+  /* ── Ceiling ambient — soft even fill from above ── */
+  var ambCount = Math.max(1, Math.floor(room.roomLen / 10));
+  for (var ami = 0; ami < ambCount; ami++) {
+    var az = room.zStart - ROOM_PAD - (ami + 0.5) * ((room.roomLen - ROOM_PAD * 2) / ambCount);
+    var ambLight = new THREE.PointLight(0xfff8f0, 0.45, 22);
+    ambLight.position.set(cx, ROOM_H - 0.15, az); g.add(ambLight);
   }
-
-  /* ── Ambient fill ── */
-  var fillLight = new THREE.PointLight(0xffeedd, 0.14, Math.max(16, room.roomLen * 0.75));
-  fillLight.position.set(cx, ROOM_H - 0.3, zMid); g.add(fillLight);
 
   /* ── Bench — ebonised steel + stone seat ── */
   if (room.slotsPerSide >= 3) {
     var bench = buildBench(); bench.position.set(cx, 0, zMid); g.add(bench);
+    /* Bench surface collision box (seat top at y ≈ 0.52) */
+    surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: zMid - 0.27, maxZ: zMid + 0.27, topY: 0.52 + 1.7 });
+    /* Second bench further back for large rooms */
+    if (room.roomLen > 22) {
+      var bench2 = buildBench(); var bz2 = zMid - room.roomLen * 0.22;
+      bench2.position.set(cx, 0, bz2); g.add(bench2);
+      surfaceBoxes.push({ minX: cx - 1.01, maxX: cx + 1.01, minZ: bz2 - 0.27, maxZ: bz2 + 0.27, topY: 0.52 + 1.7 });
+    }
   }
 
   /* ── Room number plaque — mounted near entrance top-right ── */
@@ -551,29 +503,69 @@ function buildRoom(ri) {
   roomSign.position.set(cx + WALL_X - 1.8, 5.2, room.zStart - 0.028);
   roomSign.rotation.y = Math.PI; g.add(roomSign);
 
-  /* ── Art slot positions ── */
+  /* ── Art slot positions — all 4 walls ── */
   room.artSlots = [];
   var WO = ROOM_W / 2;
+  var slotZStart = room.zStart - ROOM_PAD;
+  /* Left wall (x = cx - WO + 0.05) and Right wall (x = cx + WO - 0.05) */
   for (var i = 0; i < room.slotsPerSide; i++) {
     var z = slotZStart - i * SLOT_SPACING;
     room.artSlots.push({ pos: new THREE.Vector3(cx - WO + 0.05, 3.2, z), ry: Math.PI / 2 });
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 3.2, z), ry: -Math.PI / 2 });
   }
-
-  /* ── Pedestal between every pair of artworks on the centre line ── */
-  var pedCount = Math.floor(room.slotsPerSide / 2);
-  for (var pi = 0; pi < pedCount; pi++) {
-    var pz = slotZStart - (pi * 2 + 0.5) * SLOT_SPACING;
-    var ped = buildPedestal();
-    ped.position.set(cx, 0, pz); g.add(ped);
+  /* End walls — only use solid walls (no doorway).
+     Front wall (zStart) is solid only for room 0.
+     Back wall (zEnd) is solid only for the last room. */
+  if (room.slotsPerEnd > 0) {
+    var endSlotSpacing = SLOT_SPACING;
+    var endTotalW = (room.slotsPerEnd - 1) * endSlotSpacing;
+    for (var ei = 0; ei < room.slotsPerEnd; ei++) {
+      var ex = cx - endTotalW / 2 + ei * endSlotSpacing;
+      if (ri === 0) {
+        /* Solid front wall — face into the room */
+        room.artSlots.push({ pos: new THREE.Vector3(ex, 3.2, room.zStart - 0.05), ry: Math.PI });
+      }
+      if (ri === rooms.length - 1) {
+        /* Solid back wall — face into the room */
+        room.artSlots.push({ pos: new THREE.Vector3(ex, 3.2, room.zEnd + 0.05), ry: 0 });
+      }
+      /* For middle rooms, place on a side-panel next to the doorway lintel where there's solid wall */
+      if (ri > 0 && ri < rooms.length - 1) {
+        var doorW = CORR_W + 0.2;
+        var panelX = cx - (doorW / 2 + ART_W / 2 + 0.3);
+        if (ei === 0) room.artSlots.push({ pos: new THREE.Vector3(panelX, 3.2, room.zStart - 0.05), ry: Math.PI });
+        else room.artSlots.push({ pos: new THREE.Vector3(cx + (doorW / 2 + ART_W / 2 + 0.3), 3.2, room.zStart - 0.05), ry: Math.PI });
+      }
+    }
   }
 
   /* ── Podium with red button in EVERY room ── */
   var podium = buildPodium(ri);
-  podium.position.set(cx + WALL_X * 0.35, 0, room.zStart - 2.8);
+  var podX = cx + WALL_X * 0.35, podZ = room.zStart - 2.8;
+  podium.position.set(podX, 0, podZ);
   g.add(podium);
   /* Register the button mesh for this room's podium */
   if (ri === 0) podiumBtnMesh = podium.userData.btnMesh;
+  /* Podium surface collision box (top at y ≈ 1.08) */
+  surfaceBoxes.push({ minX: podX - 0.36, maxX: podX + 0.36, minZ: podZ - 0.36, maxZ: podZ + 0.36, topY: 1.08 + 1.7 });
+
+  /* ── Decorative fruit pedestals — apple and/or orange ── */
+  var fruitPedestals = buildFruitPedestals(ri, cx, room.zStart, room.zEnd, WALL_X);
+  fruitPedestals.forEach(function(fp) {
+    g.add(fp.group);
+    surfaceBoxes.push({ minX: fp.x - 0.36, maxX: fp.x + 0.36, minZ: fp.z - 0.36, maxZ: fp.z + 0.36, topY: 1.08 + 1.7 });
+  });
+
+  /* ── Secret explode button — room 0 only, in a corner ── */
+  if (ri === 0) {
+    var sBtn = buildSecretButton();
+    /* Place in back-left corner, protruding slightly from wall */
+    var sbx = cx - WALL_X + 0.018, sbz = room.zStart - 1.2;
+    sBtn.position.set(sbx, 1.4, sbz);
+    sBtn.rotation.y = -Math.PI / 2;  /* faces into room */
+    g.add(sBtn);
+    secretBtnMesh = sBtn.userData.btnMesh;
+  }
 
   galleryGroup.add(g);
 
@@ -626,6 +618,8 @@ function unloadRoom(ri) {
   if (podiumBtnMesh && podiumBtnMesh.userData && podiumBtnMesh.userData.roomIdx === ri) {
     podiumBtnMesh = null;
   }
+  /* Clear secretBtnMesh if room 0 was unloaded */
+  if (ri === 0) secretBtnMesh = null;
 
   room.built = false;
   room.artSlots = [];
@@ -780,7 +774,13 @@ function buildMuseum(totalCount) {
   }
   clearArt();
   benchPositions = [];
+  surfaceBoxes = [];
+  droppedArts = [];
   podiumBtnMesh = null;
+  secretBtnMesh = null;
+  explodeActive = false; explodeResetTimer = 0;
+  explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
+  explodeParticles = [];
   planLayout(totalCount);
 
   /* Only build rooms 0 and 1 upfront — the rest are built lazily */
@@ -1392,26 +1392,106 @@ function buildPodium(ri) {
   /* Red glow under button */
   var podLight = new THREE.PointLight(0xff2200, 0.55, 2.4);
   podLight.position.y = 1.28; group.add(podLight);
-  /* Instruction signs — 4 faces, large and readable */
-  var signTex = makePodiumLabel();
-  var signMat = new THREE.MeshBasicMaterial({ map: signTex, transparent: false });
-  var signW = 0.88, signH = 0.44; /* ~4× previous size */
-  [
-    { p: [0,   0.62,  0.36], ry: 0           },
-    { p: [0,   0.62, -0.36], ry: Math.PI     },
-    { p: [-0.36, 0.62, 0],   ry: Math.PI / 2 },
-    { p: [ 0.36, 0.62, 0],   ry: -Math.PI / 2},
-  ].forEach(function(s) {
-    /* Backing plate for sign */
-    var bp = new THREE.Mesh(new THREE.BoxGeometry(signW + 0.04, signH + 0.04, 0.02),
-      new THREE.MeshStandardMaterial({ color: "#2a2820", roughness: 0.4, metalness: 0.1 }));
-    bp.position.set(s.p[0], s.p[1], s.p[2]); bp.rotation.y = s.ry; group.add(bp);
-    var sign = new THREE.Mesh(new THREE.PlaneGeometry(signW, signH), signMat);
-    var offset = 0.012;
-    var ox = Math.sin(s.ry) * offset, oz = Math.cos(s.ry) * offset;
-    sign.position.set(s.p[0] + ox, s.p[1], s.p[2] + oz); sign.rotation.y = s.ry; group.add(sign);
-  });
   return group;
+}
+
+/* ── Secret explode button — protruding white button that blends with wall ── */
+function buildSecretButton() {
+  var group = new THREE.Group();
+  /* Subtle wall plate almost same color as wall — barely visible */
+  var plate = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.08, 0.012),
+    new THREE.MeshStandardMaterial({ color: "#eee8de", roughness: 0.88, metalness: 0.0 })
+  );
+  plate.position.z = 0.006; group.add(plate);
+  /* The button — protrudes slightly, slightly off-white */
+  var btn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.026, 0.028, 0.018, 20),
+    new THREE.MeshStandardMaterial({ color: "#f2ede4", roughness: 0.6, metalness: 0.02 })
+  );
+  btn.rotation.x = Math.PI / 2;  /* cylinder axis pointing out from wall */
+  btn.position.z = 0.018;
+  btn.userData.isSecretBtn = true;
+  group.add(btn);
+  group.userData.btnMesh = btn;
+  return group;
+}
+
+/* ── Fruit pedestals — apple and/or orange on top of decorative columns ──── */
+function buildFruitPedestals(ri, cx, zStart, zEnd, wallHalf) {
+  var results = [];
+  /* Always place minimum 2 for room 0 (apple + orange).
+     For additional rooms alternate. */
+  var fruitTypes = [];
+  if (ri === 0) {
+    fruitTypes = ["apple", "orange"];  /* guaranteed apple + orange */
+  } else {
+    fruitTypes = (ri % 2 === 0) ? ["apple"] : ["orange"];
+  }
+  fruitTypes.forEach(function(ft, fi) {
+    /* Alternate sides / positions */
+    var side = (fi % 2 === 0) ? -1 : 1;
+    var offsetZ = (ri === 0 && fi === 1) ? zStart - 5.5 : zStart - 4.0;
+    var px = cx + side * wallHalf * 0.55;
+    var pz = offsetZ;
+    /* Clamp inside room */
+    pz = Math.max(zEnd + 1.5, Math.min(zStart - 1.5, pz));
+    var grp = new THREE.Group();
+    /* Pedestal base */
+    var ped = buildPedestal();
+    grp.add(ped);
+    /* Fruit on top */
+    var fruit = (ft === "apple") ? buildApple() : buildOrange();
+    fruit.position.y = 1.16;  /* just above capital */
+    grp.add(fruit);
+    grp.position.set(px, 0, pz);
+    results.push({ group: grp, x: px, z: pz });
+  });
+  return results;
+}
+
+/* ── Apple mesh (green apple) ─────────────────────────────────────────────── */
+function buildApple() {
+  var g = new THREE.Group();
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.11, 16, 14),
+    new THREE.MeshPhysicalMaterial({ color: "#4a8c2a", roughness: 0.35, metalness: 0.04,
+      clearcoat: 0.6, clearcoatRoughness: 0.1 })
+  );
+  body.scale.set(1, 1.08, 1);
+  body.position.y = 0.11; g.add(body);
+  /* Stem */
+  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.06, 6),
+    new THREE.MeshStandardMaterial({ color: "#3a2010", roughness: 0.7 }));
+  stem.position.y = 0.225; g.add(stem);
+  /* Small leaf */
+  var leafShape = new THREE.Shape();
+  leafShape.ellipse(0, 0, 0.025, 0.012, 0, Math.PI * 2);
+  var leafGeo = new THREE.ShapeGeometry(leafShape);
+  var leaf = new THREE.Mesh(leafGeo, new THREE.MeshStandardMaterial({ color: "#2e7020", roughness: 0.6, side: THREE.DoubleSide }));
+  leaf.position.set(0.022, 0.24, 0); leaf.rotation.z = 0.4; g.add(leaf);
+  return g;
+}
+
+/* ── Orange mesh ──────────────────────────────────────────────────────────── */
+function buildOrange() {
+  var g = new THREE.Group();
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.115, 18, 14),
+    new THREE.MeshPhysicalMaterial({ color: "#e07020", roughness: 0.55, metalness: 0.0,
+      clearcoat: 0.2, clearcoatRoughness: 0.35 })
+  );
+  body.scale.set(1, 0.94, 1);
+  body.position.y = 0.115; g.add(body);
+  /* Navel dimple hint */
+  var navel = new THREE.Mesh(new THREE.SphereGeometry(0.018, 8, 6),
+    new THREE.MeshStandardMaterial({ color: "#b85010", roughness: 0.8 }));
+  navel.position.y = 0.003; g.add(navel);
+  /* Stem */
+  var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.005, 0.04, 6),
+    new THREE.MeshStandardMaterial({ color: "#3a2c10", roughness: 0.7 }));
+  stem.position.y = 0.235; g.add(stem);
+  return g;
 }
 
 /* ── Raycaster + interaction ──────────────────────────────────────────────── */
@@ -1444,6 +1524,19 @@ function checkButtonInteraction() {
   var intersects = raycaster.intersectObject(activeBtn);
   var hit = intersects.length > 0 && intersects[0].distance < 3.5;
   if (hit !== buttonHovered) { buttonHovered = hit; updateInteractionHint(hit); }
+}
+
+/* ── Check if aiming at the secret explode button ─────────────────────────── */
+function checkSecretButtonInteraction() {
+  if (!inMuseum || !secretBtnMesh || explodeActive) {
+    if (secretBtnHovered) { secretBtnHovered = false; }
+    return;
+  }
+  raycaster.setFromCamera(screenCenter, camera);
+  var hits = raycaster.intersectObject(secretBtnMesh, true);
+  var hit = hits.length > 0 && hits[0].distance < 2.5;
+  secretBtnHovered = hit;
+  /* No visible hint — intentionally secret */
 }
 
 /* ── Check if aiming at a history button ──────────────────────────────────── */
@@ -1485,14 +1578,39 @@ function checkHistoryInteraction() {
 function updateInteractionHint(show, mode) {
   var el = document.getElementById("interaction-hint");
   if (!el) return;
-  if (mode === "history") {
+  if (mode === "sit-up") {
+    el.querySelector(".hint-desktop").textContent = "[E] stand up";
+    el.querySelector(".hint-touch").textContent = "tap to stand up";
+  } else if (mode === "sit-down") {
+    el.querySelector(".hint-desktop").textContent = "[E] sit down";
+    el.querySelector(".hint-touch").textContent = "tap to sit";
+  } else if (mode === "history") {
     el.querySelector(".hint-desktop").textContent = "[E] play history";
     el.querySelector(".hint-touch").textContent = "tap to play history";
   } else {
     el.querySelector(".hint-desktop").textContent = "[E] toggle frames";
     el.querySelector(".hint-touch").textContent = "tap to toggle frames";
   }
-  el.classList.toggle("visible", show);
+  if (show) {
+    el.classList.add("visible");
+    hintDismissTimer = HINT_PERSIST;
+  } else {
+    el.classList.remove("visible");
+    hintDismissTimer = 0;
+  }
+}
+
+/* ── Tick hint auto-dismiss ───────────────────────────────────────────────── */
+function tickHintDismiss(dt) {
+  if (hintDismissTimer <= 0) return;
+  /* Don't dismiss while actively hovering an interactive object */
+  if (buttonHovered || benchHovered || historyBtnHovered || isSitting) { hintDismissTimer = HINT_PERSIST; return; }
+  hintDismissTimer -= dt;
+  if (hintDismissTimer <= 0) {
+    hintDismissTimer = 0;
+    var el = document.getElementById("interaction-hint");
+    if (el) el.classList.remove("visible");
+  }
 }
 
 function pressButton() {
@@ -1513,8 +1631,115 @@ function pressButton() {
   setTimeout(function() { activeBtn.position.y = origY; btnAnimating = false; }, 150);
 }
 
+function pressSecretButton() {
+  if (explodeActive || !secretBtnMesh) return;
+  explodeActive = true;
+  explodeResetTimer = 10.0;
+  /* Depress the button */
+  secretBtnMesh.position.z -= 0.01;
+  playExplodeSound();
+  /* Shatter every art group into voxels */
+  var toExplode = [];
+  artGroup.traverse(function(c) {
+    if (c === artGroup) return;
+    if (!c.parent || c.parent !== artGroup) return;
+    toExplode.push(c);
+  });
+  toExplode.forEach(function(artG) {
+    var worldPos = new THREE.Vector3();
+    artG.getWorldPosition(worldPos);
+    /* Collect voxel colors/positions from the instanced mesh children */
+    var instMesh = null;
+    artG.traverse(function(ch) { if (ch.isInstancedMesh) instMesh = ch; });
+    var numVoxels = instMesh ? Math.min(instMesh.count, 120) : 20;
+    var dummy = new THREE.Matrix4(), col = new THREE.Color();
+    for (var vi = 0; vi < numVoxels; vi++) {
+      var voxMat = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0.04 });
+      if (instMesh) {
+        instMesh.getMatrixAt(vi, dummy);
+        if (instMesh.instanceColor) { instMesh.getColorAt(vi, col); voxMat.color.copy(col); }
+        else voxMat.color.set("#c0b090");
+      } else {
+        voxMat.color.set("#c0b090");
+      }
+      var vox = new THREE.Mesh(new THREE.BoxGeometry(VOXEL_SIZE * 1.5, VOXEL_SIZE * 1.5, VOXEL_SIZE * 1.5), voxMat);
+      /* Random scatter from art's world position */
+      vox.position.copy(worldPos);
+      vox.position.x += (Math.random() - 0.5) * 2.2;
+      vox.position.y += (Math.random() - 0.5) * 2.0 + 1.5;
+      vox.position.z += (Math.random() - 0.5) * 2.2;
+      scene.add(vox);
+      explodeParticles.push({
+        mesh: vox,
+        vel: new THREE.Vector3(
+          (Math.random() - 0.5) * 8,
+          Math.random() * 7 + 2,
+          (Math.random() - 0.5) * 8
+        ),
+        rot: new THREE.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3),
+        life: 10.0
+      });
+    }
+    /* Hide original art */
+    artG.visible = false;
+  });
+}
+
+function tickExplode(dt) {
+  if (!explodeActive) return;
+  /* Tick particles */
+  for (var pi = 0; pi < explodeParticles.length; pi++) {
+    var p = explodeParticles[pi];
+    p.vel.y += GRAVITY * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    p.mesh.rotation.x += p.rot.x * dt;
+    p.mesh.rotation.y += p.rot.y * dt;
+    p.mesh.rotation.z += p.rot.z * dt;
+    /* Bounce/settle on floor */
+    if (p.mesh.position.y < 0.04) {
+      p.mesh.position.y = 0.04;
+      p.vel.y = Math.abs(p.vel.y) * 0.22;
+      p.vel.x *= 0.7; p.vel.z *= 0.7;
+    }
+    p.life -= dt;
+  }
+  /* Reset timer */
+  explodeResetTimer -= dt;
+  if (explodeResetTimer <= 0) {
+    /* Remove particles */
+    explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
+    explodeParticles = [];
+    /* Restore art visibility */
+    artGroup.traverse(function(c) {
+      if (c !== artGroup && c.parent === artGroup) c.visible = true;
+    });
+    /* Restore button */
+    if (secretBtnMesh) secretBtnMesh.position.z += 0.01;
+    explodeActive = false;
+  }
+}
+
+function playExplodeSound() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  var now = audioCtx.currentTime;
+  /* Low rumble + high crack */
+  [80, 140, 220, 380, 700].forEach(function(freq, i) {
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = i < 3 ? "sawtooth" : "square";
+    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.exponentialRampToValueAtTime(freq * 0.3, now + 0.6);
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5 + i * 0.05);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now + i * 0.01); osc.stop(now + 0.8);
+  });
+}
+
 function tryInteract() {
   if (isSitting) { standUp(); return; }
+  if (secretBtnHovered) { pressSecretButton(); return; }
   if (historyBtnHovered && hoveredHistoryGroup) {
     var tid = hoveredHistoryGroup.userData.tokenId;
     toggleHistoryAnim(hoveredHistoryGroup, tid);
@@ -1530,25 +1755,14 @@ function sitDown(bi) {
   isSitting = true;
   camera.position.set(b.x, 0.9, b.z);
   GROUND_Y = 0.9;
-  updateInteractionHint(false);
-  var sitHint = document.getElementById("interaction-hint");
-  if (sitHint) {
-    sitHint.querySelector(".hint-desktop").textContent = "[E] stand up";
-    sitHint.querySelector(".hint-touch").textContent = "tap to stand up";
-    sitHint.classList.add("visible");
-  }
+  updateInteractionHint(true, "sit-up");
 }
 
 function standUp() {
   isSitting = false;
   GROUND_Y = 1.7;
   camera.position.y = 1.7;
-  var sitHint = document.getElementById("interaction-hint");
-  if (sitHint) {
-    sitHint.querySelector(".hint-desktop").textContent = "[E] toggle frames";
-    sitHint.querySelector(".hint-touch").textContent = "tap to toggle frames";
-    sitHint.classList.remove("visible");
-  }
+  updateInteractionHint(false);
 }
 
 function checkBenchProximity() {
@@ -1565,19 +1779,9 @@ function checkBenchProximity() {
   if (newHover !== benchHovered) {
     benchHovered = newHover;
     if (benchHovered) {
-      var el = document.getElementById("interaction-hint");
-      if (el) {
-        el.querySelector(".hint-desktop").textContent = "[E] sit down";
-        el.querySelector(".hint-touch").textContent = "tap to sit";
-        el.classList.add("visible");
-      }
+      updateInteractionHint(true, "sit-down");
     } else if (!buttonHovered) {
-      var el2 = document.getElementById("interaction-hint");
-      if (el2) {
-        el2.querySelector(".hint-desktop").textContent = "[E] toggle frames";
-        el2.querySelector(".hint-touch").textContent = "tap to toggle frames";
-        el2.classList.remove("visible");
-      }
+      updateInteractionHint(false);
     }
   }
 }
@@ -1770,6 +1974,15 @@ function exitMuseum() {
 
   inMuseum = false; currentRoomIdx = -1;
   isSitting = false; isJumping = false; jumpVelocity = 0; GROUND_Y = 1.7;
+  /* Reset drag state */
+  if (draggedArt) { scene.remove(draggedArt); dispose(draggedArt); draggedArt = null; }
+  isDragging = false; dragVelocity.set(0, 0, 0);
+  droppedArts.forEach(function(da) { scene.remove(da.group); dispose(da.group); });
+  droppedArts = [];
+  /* Reset explode state */
+  explodeParticles.forEach(function(p) { scene.remove(p.mesh); dispose(p.mesh); });
+  explodeParticles = []; explodeActive = false; explodeResetTimer = 0;
+  secretBtnMesh = null; secretBtnHovered = false;
   overlayEl.classList.remove("hidden");
   hudEl.classList.add("hud-hidden");
   clearArt(); setStatus("");
@@ -1817,7 +2030,7 @@ var _selAddresses = [];  /* saved for HUD label after entering */
 
 function showSelectionGrid(tokenIds, addresses) {
   _selAddresses = addresses || [];
-  var MAX_SELECT = 10;
+  var MAX_SELECT = 40;
   var selected = new Set();
 
   selectionGrid.innerHTML = "";
@@ -1826,7 +2039,7 @@ function showSelectionGrid(tokenIds, addresses) {
   selectionOverlay.classList.remove("selection-hidden");
 
   /* Status line on the landing page */
-  setStatus(tokenIds.length + " normies found \u2014 pick up to " + MAX_SELECT);
+  setStatus(tokenIds.length + " normies found \u2014 pick up to " + MAX_SELECT + (tokenIds.length > 40 ? " (40 max)" : ""));
 
   /* Build all cards */
   tokenIds.forEach(function(tokenId) {
@@ -2045,6 +2258,43 @@ if (!isTouch && controls) {
   });
   controls.addEventListener("lock", function()   { document.body.classList.add("locked"); });
   controls.addEventListener("unlock", function() { document.body.classList.remove("locked"); });
+
+  /* Right mouse button — grab / drop dragged normie */
+  renderer.domElement.addEventListener("mousedown", function(e) {
+    if (!inMuseum || !controls.isLocked || e.button !== 2) return;
+    e.preventDefault();
+    if (isDragging) { dropDraggedArt(); return; }
+    /* Raycast against art group for a voxel/flat mesh */
+    var artRay = new THREE.Raycaster(); artRay.far = 4.0;
+    artRay.setFromCamera(screenCenter, camera);
+    var candidates = [];
+    artGroup.traverse(function(c) { if (c.isMesh && c !== artGroup) candidates.push(c); });
+    var hits = artRay.intersectObjects(candidates, false);
+    if (!hits.length) return;
+    /* Find the top-level art group */
+    var p = hits[0].object;
+    while (p && p.parent !== artGroup) p = p.parent;
+    if (!p) return;
+    /* Detach from wall, put in world space */
+    var worldPos = new THREE.Vector3(); p.getWorldPosition(worldPos);
+    var worldQuat = new THREE.Quaternion(); p.getWorldQuaternion(worldQuat);
+    artGroup.remove(p);
+    scene.add(p);
+    p.position.copy(worldPos);
+    p.quaternion.copy(worldQuat);
+    draggedArt = p;
+    isDragging = true;
+    dragVelocity.set(0, 0, 0);
+  });
+
+  renderer.domElement.addEventListener("mouseup", function(e) {
+    if (!inMuseum || !controls.isLocked || e.button !== 2) return;
+    e.preventDefault();
+    if (isDragging) dropDraggedArt();
+  });
+
+  /* Prevent default context menu when pointer is locked */
+  renderer.domElement.addEventListener("contextmenu", function(e) { e.preventDefault(); });
 }
 
 /* ── Keyboard ─────────────────────────────────────────────────────────────── */
@@ -2179,23 +2429,99 @@ function move(dt) {
     p.x = cl2.x; p.z = cl2.z;
   }
 
-  /* Jump physics */
+  /* Jump physics — with surface collision */
   if (isJumping) {
     jumpVelocity += GRAVITY * dt;
     camera.position.y += jumpVelocity * dt;
-    if (camera.position.y <= GROUND_Y) {
-      camera.position.y = GROUND_Y;
+    /* Check if landing on a surface */
+    var landY = 1.7;  /* default ground */
+    var px = camera.position.x, pz = camera.position.z;
+    for (var si = 0; si < surfaceBoxes.length; si++) {
+      var sb = surfaceBoxes[si];
+      if (px >= sb.minX && px <= sb.maxX && pz >= sb.minZ && pz <= sb.maxZ) {
+        if (camera.position.y <= sb.topY && camera.position.y > sb.topY - 1.0) {
+          landY = Math.max(landY, sb.topY);
+        }
+      }
+    }
+    if (camera.position.y <= landY) {
+      camera.position.y = landY;
+      GROUND_Y = landY;
       isJumping = false;
       jumpVelocity = 0;
     }
   } else {
-    camera.position.y = GROUND_Y;
+    /* Check if we've walked off a surface */
+    var floorY = 1.7;
+    var px2 = camera.position.x, pz2 = camera.position.z;
+    for (var si2 = 0; si2 < surfaceBoxes.length; si2++) {
+      var sb2 = surfaceBoxes[si2];
+      if (px2 >= sb2.minX && px2 <= sb2.maxX && pz2 >= sb2.minZ && pz2 <= sb2.maxZ) {
+        if (GROUND_Y >= sb2.topY - 0.1) {
+          floorY = Math.max(floorY, sb2.topY);
+        }
+      }
+    }
+    if (floorY < GROUND_Y - 0.1) {
+      /* Walked off the edge — start falling */
+      isJumping = true;
+      jumpVelocity = 0;
+    } else {
+      GROUND_Y = floorY;
+      camera.position.y = GROUND_Y;
+    }
   }
 
   if (isMoving) {
     stepCooldown -= dt;
     if (stepCooldown <= 0) { playFootstep(); stepCooldown = isSprinting ? STEP_INTERVAL_SPRINT : STEP_INTERVAL; }
   } else { stepCooldown = 0; }
+}
+
+/* ── Drag helper functions ────────────────────────────────────────────────── */
+var _prevDragPos = new THREE.Vector3();
+
+function dropDraggedArt() {
+  if (!draggedArt) return;
+  var art = draggedArt;
+  draggedArt = null; isDragging = false;
+  /* Apply a gentle toss velocity from drag movement */
+  var vel = dragVelocity.clone().multiplyScalar(2.8);
+  vel.y = Math.max(vel.y, 0);
+  droppedArts.push({ group: art, velocity: vel, onGround: false });
+  dragVelocity.set(0, 0, 0);
+}
+
+function tickDraggedArt(dt) {
+  if (!isDragging || !draggedArt) return;
+  /* Move art to a point 2m in front of the camera */
+  var target = new THREE.Vector3();
+  camera.getWorldDirection(target);
+  target.multiplyScalar(2.0).add(camera.position);
+  /* Smooth follow */
+  var prev = draggedArt.position.clone();
+  draggedArt.position.lerp(target, Math.min(1, dt * 12));
+  /* Estimate velocity for toss on release */
+  dragVelocity.subVectors(draggedArt.position, prev).divideScalar(dt);
+  /* Rotate slowly */
+  draggedArt.rotation.y += dt * 0.6;
+}
+
+function tickDroppedArts(dt) {
+  for (var di = droppedArts.length - 1; di >= 0; di--) {
+    var da = droppedArts[di];
+    if (da.onGround) continue;
+    da.velocity.y += GRAVITY * dt;
+    da.group.position.addScaledVector(da.velocity, dt);
+    /* Floor collision */
+    var floorLimit = ART_H / 2 + 0.01;
+    if (da.group.position.y < floorLimit) {
+      da.group.position.y = floorLimit;
+      da.velocity.y = -da.velocity.y * 0.35;
+      da.velocity.x *= 0.75; da.velocity.z *= 0.75;
+      if (Math.abs(da.velocity.y) < 0.3) { da.velocity.set(0, 0, 0); da.onGround = true; }
+    }
+  }
 }
 
 /* ── Reveal animation ─────────────────────────────────────────────────────── */
@@ -2225,9 +2551,14 @@ function animate() {
   if (shouldMove) move(dt);
   tickReveal(dt);
   checkButtonInteraction();
+  checkSecretButtonInteraction();
   checkHistoryInteraction();
   checkBenchProximity();
   tickHistoryAnims(dt);
+  tickDraggedArt(dt);
+  tickDroppedArts(dt);
+  tickExplode(dt);
+  tickHintDismiss(dt);
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
