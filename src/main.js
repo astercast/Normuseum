@@ -153,28 +153,33 @@ scene.add(sun);
 scene.add(new THREE.HemisphereLight(0xffe8d0, 0xb0a090, 0.18));
 
 /* ── Shared materials (upgraded PBR) ──────────────────────────────────────── */
+/* Palette: pale limestone walls, warm sand floor, dark slate accent, brushed brass trim */
 const floorMat = new THREE.MeshPhysicalMaterial({
-  color: "#c4b89e", roughness: 0.06, metalness: 0.08,
-  clearcoat: 0.55, clearcoatRoughness: 0.1, reflectivity: 0.65,
+  color: "#c8bca4", roughness: 0.04, metalness: 0.06,
+  clearcoat: 0.8, clearcoatRoughness: 0.06, reflectivity: 0.78,
 });
-const wallMat  = new THREE.MeshStandardMaterial({ color: "#e8e0d4", roughness: 0.9 });
-const panelMat = new THREE.MeshStandardMaterial({ color: "#d8cebc", roughness: 0.78, metalness: 0.01 });
-const ceilMat  = new THREE.MeshStandardMaterial({ color: "#eee8de", roughness: 0.95 });
-const mouldMat = new THREE.MeshStandardMaterial({ color: "#cfc8b8", roughness: 0.45, metalness: 0.08 });
-const baseMat  = new THREE.MeshStandardMaterial({ color: "#c8bfae", roughness: 0.58, metalness: 0.05 });
-const frameMat = new THREE.MeshStandardMaterial({ color: "#7a6a50", roughness: 0.28, metalness: 0.3 });
-const backMat  = new THREE.MeshStandardMaterial({ color: "#f0ebe2", roughness: 0.95 });
-const placeMat = new THREE.MeshStandardMaterial({ color: "#ddd5c8", roughness: 0.95 });
-const benchMat = new THREE.MeshStandardMaterial({ color: "#28241e", roughness: 0.5, metalness: 0.18 });
-const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#3c3228", roughness: 0.68, metalness: 0.04 });
+const wallMat      = new THREE.MeshStandardMaterial({ color: "#ede8df", roughness: 0.92 });
+const accentWallMat= new THREE.MeshStandardMaterial({ color: "#2a2824", roughness: 0.85 }); /* dark feature wall */
+const panelMat     = new THREE.MeshStandardMaterial({ color: "#d6cdb8", roughness: 0.82 });
+const ceilMat      = new THREE.MeshStandardMaterial({ color: "#f0ece4", roughness: 0.96 });
+const mouldMat     = new THREE.MeshStandardMaterial({ color: "#b8b0a0", roughness: 0.35, metalness: 0.18 });
+const baseMat      = new THREE.MeshStandardMaterial({ color: "#b0a890", roughness: 0.5,  metalness: 0.08 });
+const frameMat     = new THREE.MeshStandardMaterial({ color: "#6a5c40", roughness: 0.22, metalness: 0.45 });
+const backMat      = new THREE.MeshStandardMaterial({ color: "#f2ede4", roughness: 0.95 });
+const placeMat     = new THREE.MeshStandardMaterial({ color: "#d8d0c4", roughness: 0.95 });
+const benchMat     = new THREE.MeshStandardMaterial({ color: "#1c1814", roughness: 0.45, metalness: 0.24 });
+const benchSeatMat = new THREE.MeshStandardMaterial({ color: "#f0ebe0", roughness: 0.55, metalness: 0.02 }); /* pale stone seat */
 const corrFloorMat = new THREE.MeshPhysicalMaterial({
-  color: "#b8aa90", roughness: 0.05, metalness: 0.12,
-  clearcoat: 0.5, clearcoatRoughness: 0.1, reflectivity: 0.65,
+  color: "#b4a888", roughness: 0.04, metalness: 0.1,
+  clearcoat: 0.7, clearcoatRoughness: 0.06, reflectivity: 0.78,
 });
-const archMat  = new THREE.MeshStandardMaterial({ color: "#c8c0b0", roughness: 0.48, metalness: 0.1 });
-const inlayMat = new THREE.MeshStandardMaterial({ color: "#9e8c6c", roughness: 0.12, metalness: 0.32 });
-const beamMat  = new THREE.MeshStandardMaterial({ color: "#e4ddd2", roughness: 0.75, metalness: 0.03 });
-const trimMat  = new THREE.MeshStandardMaterial({ color: "#c8c0b0", roughness: 0.52, metalness: 0.15 });
+const archMat  = new THREE.MeshStandardMaterial({ color: "#c4bca8", roughness: 0.42, metalness: 0.14 });
+const inlayMat = new THREE.MeshStandardMaterial({ color: "#8c7c5c", roughness: 0.08, metalness: 0.48 }); /* brass inlay */
+const beamMat  = new THREE.MeshStandardMaterial({ color: "#e8e2d8", roughness: 0.78, metalness: 0.02 });
+const trimMat  = new THREE.MeshStandardMaterial({ color: "#a09080", roughness: 0.28, metalness: 0.38 }); /* brushed brass */
+const trackMat = new THREE.MeshStandardMaterial({ color: "#222018", roughness: 0.32, metalness: 0.72 }); /* matte black track */
+const pedestalMat = new THREE.MeshPhysicalMaterial({ color: "#d8d0c4", roughness: 0.18, metalness: 0.04,
+  clearcoat: 0.6, clearcoatRoughness: 0.12 }); /* pale marble pedestal */
 
 /* ── Shared geometries (reduces GC churn) ─────────────────────────────────── */
 const sharedVoxelGeo = new THREE.BoxGeometry(VOXEL_SIZE, VOXEL_SIZE, VOXEL_SIZE);
@@ -272,48 +277,64 @@ function buildRoom(ri) {
   var cx = room.cx;
   var zMid = (room.zStart + room.zEnd) / 2;
   var WALL_X = ROOM_W / 2;
+  /* Alternate accent wall: even rooms = left wall dark, odd rooms = right wall dark */
+  var accentSide = (ri % 2 === 0) ? -1 : 1; /* -1 = left wall, +1 = right wall */
 
-  /* Floor */
+  /* ── Floor (polished limestone) ── */
   var floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), floorMat);
   floor.rotation.x = -Math.PI / 2; floor.position.set(cx, 0, zMid); floor.receiveShadow = true;
   g.add(floor);
 
-  /* Floor inlay strips */
-  [-WALL_X + 0.9, WALL_X - 0.9].forEach(function(lx) {
-    var strip = new THREE.Mesh(new THREE.PlaneGeometry(0.06, room.roomLen - 1.5), inlayMat);
-    strip.rotation.x = -Math.PI / 2; strip.position.set(cx + lx, 0.003, zMid); g.add(strip);
+  /* Brass border inlay — perimeter rectangle */
+  var borderInset = 0.55;
+  [
+    [cx, room.zStart - borderInset, ROOM_W - borderInset * 2, 0.035],  /* top edge */
+    [cx, room.zEnd   + borderInset, ROOM_W - borderInset * 2, 0.035],  /* bottom edge */
+  ].forEach(function(p) {
+    var s = new THREE.Mesh(new THREE.PlaneGeometry(p[2], p[3]), inlayMat);
+    s.rotation.x = -Math.PI / 2; s.position.set(p[0], 0.004, p[1]); g.add(s);
   });
-  var centreLine = new THREE.Mesh(new THREE.PlaneGeometry(0.04, room.roomLen - 3), inlayMat);
-  centreLine.rotation.x = -Math.PI / 2; centreLine.position.set(cx, 0.003, zMid); g.add(centreLine);
-
-  /* Floor reflection */
-  var reflMat = new THREE.MeshStandardMaterial({
-    color: "#e0d8cc", roughness: 0.02, metalness: 0.45,
-    transparent: true, opacity: 0.08,
+  [
+    [cx - WALL_X + borderInset, zMid, 0.035, room.roomLen - borderInset * 2], /* left edge */
+    [cx + WALL_X - borderInset, zMid, 0.035, room.roomLen - borderInset * 2], /* right edge */
+  ].forEach(function(p) {
+    var s = new THREE.Mesh(new THREE.PlaneGeometry(p[2], p[3]), inlayMat);
+    s.rotation.x = -Math.PI / 2; s.position.set(p[0], 0.004, p[1]); g.add(s);
   });
-  var refl = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), reflMat);
-  refl.rotation.x = -Math.PI / 2; refl.position.set(cx, 0.002, zMid); g.add(refl);
+  /* Centre diamond cross */
+  var cLine1 = new THREE.Mesh(new THREE.PlaneGeometry(0.025, room.roomLen - borderInset * 2 - 0.1), inlayMat);
+  cLine1.rotation.x = -Math.PI / 2; cLine1.position.set(cx, 0.004, zMid); g.add(cLine1);
+  var cLine2 = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W - borderInset * 2 - 0.1, 0.025), inlayMat);
+  cLine2.rotation.x = -Math.PI / 2; cLine2.position.set(cx, 0.004, zMid); g.add(cLine2);
 
-  /* Ceiling */
+  /* ── Ceiling ── */
   var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, room.roomLen), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.set(cx, ROOM_H, zMid); g.add(ceil);
 
-  /* Ceiling beams (coffers) */
-  var beamCount = Math.max(2, Math.floor(room.roomLen / 6));
-  for (var bi = 0; bi < beamCount; bi++) {
-    var bz = room.zStart - ROOM_PAD - (bi + 0.5) * ((room.roomLen - ROOM_PAD * 2) / beamCount);
-    var bm = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.4, 0.08, 0.16), beamMat);
-    bm.position.set(cx, ROOM_H - 0.04, bz); g.add(bm);
+  /* Ceiling coffers — shallow recessed grid */
+  var cofferCount = Math.max(2, Math.floor(room.roomLen / 5.5));
+  for (var bi = 0; bi < cofferCount; bi++) {
+    var bz = room.zStart - ROOM_PAD - (bi + 0.5) * ((room.roomLen - ROOM_PAD * 2) / cofferCount);
+    /* Main cross beam */
+    var bm = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.3, 0.1, 0.22), beamMat);
+    bm.position.set(cx, ROOM_H - 0.05, bz); g.add(bm);
+    /* Under-cove shadow strip */
+    var cove = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 0.3, 0.04, 0.04), mouldMat);
+    cove.position.set(cx, ROOM_H - 0.12, bz); g.add(cove);
   }
 
-  /* Side walls */
+  /* ── Side walls ── */
   var wallGeo = new THREE.PlaneGeometry(room.roomLen, ROOM_H);
-  var lw = new THREE.Mesh(wallGeo, wallMat);
+  /* Left wall — may be accent */
+  var lwMat = (accentSide === -1) ? accentWallMat : wallMat;
+  var lw = new THREE.Mesh(wallGeo, lwMat);
   lw.rotation.y = Math.PI / 2; lw.position.set(cx - WALL_X, ROOM_H / 2, zMid); lw.receiveShadow = true; g.add(lw);
-  var rw = new THREE.Mesh(wallGeo, wallMat);
+  /* Right wall — may be accent */
+  var rwMat = (accentSide === 1) ? accentWallMat : wallMat;
+  var rw = new THREE.Mesh(wallGeo, rwMat);
   rw.rotation.y = -Math.PI / 2; rw.position.set(cx + WALL_X, ROOM_H / 2, zMid); rw.receiveShadow = true; g.add(rw);
 
-  /* End walls with doorways */
+  /* ── End walls ── */
   if (ri === 0) {
     var ew = new THREE.Mesh(new THREE.PlaneGeometry(ROOM_W, ROOM_H), wallMat);
     ew.rotation.y = Math.PI; ew.position.set(cx, ROOM_H / 2, room.zStart); g.add(ew);
@@ -327,90 +348,128 @@ function buildRoom(ri) {
     buildDoorwayWall(g, cx, room.zEnd, 0, ROOM_W, ROOM_H);
   }
 
-  /* Wainscoting */
-  var wainH = 1.1;
-  var wainGeo = new THREE.PlaneGeometry(room.roomLen, wainH);
+  /* ── Wainscoting (only on light walls — accent wall is bare) ── */
+  var wainH = 1.05;
   [-WALL_X, WALL_X].forEach(function(x, idx) {
+    var thisAccent = (idx === 0) ? (accentSide === -1) : (accentSide === 1);
+    if (thisAccent) return; /* no wainscot on dark feature wall */
+    var wainGeo = new THREE.PlaneGeometry(room.roomLen, wainH);
     var w = new THREE.Mesh(wainGeo, panelMat);
     w.rotation.y = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
-    w.position.set(cx + x + (idx === 0 ? 0.01 : -0.01), wainH / 2, zMid); g.add(w);
+    w.position.set(cx + x + (idx === 0 ? 0.012 : -0.012), wainH / 2, zMid); g.add(w);
   });
 
-  /* Chair rail */
-  var railGeo = new THREE.BoxGeometry(0.07, 0.06, room.roomLen + 0.2);
-  [-WALL_X + 0.035, WALL_X - 0.035].forEach(function(x) {
+  /* ── Chair rail (brass) ── */
+  var railGeo = new THREE.BoxGeometry(0.065, 0.055, room.roomLen + 0.2);
+  [-WALL_X + 0.033, WALL_X - 0.033].forEach(function(x) {
     var rail = new THREE.Mesh(railGeo, mouldMat); rail.position.set(cx + x, wainH, zMid); g.add(rail);
   });
 
-  /* Crown moulding (two-piece) */
-  [-WALL_X + 0.06, WALL_X - 0.06].forEach(function(x) {
-    var crown1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, room.roomLen + 0.4), mouldMat);
-    crown1.position.set(cx + x, ROOM_H - 0.035, zMid); g.add(crown1);
-    var crown2 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, room.roomLen + 0.4), mouldMat);
-    crown2.position.set(cx + x, ROOM_H - 0.07, zMid); g.add(crown2);
+  /* ── Crown moulding — three-piece classical profile ── */
+  [-WALL_X + 0.07, WALL_X - 0.07].forEach(function(x) {
+    /* Bed mould */
+    var m1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, room.roomLen + 0.5), mouldMat);
+    m1.position.set(cx + x, ROOM_H - 0.03, zMid); g.add(m1);
+    /* Cornice shelf */
+    var m2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.045, room.roomLen + 0.5), mouldMat);
+    m2.position.set(cx + x, ROOM_H - 0.072, zMid); g.add(m2);
+    /* Cyma recta */
+    var m3 = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, room.roomLen + 0.5), mouldMat);
+    m3.position.set(cx + x, ROOM_H - 0.13, zMid); g.add(m3);
   });
 
-  /* Baseboard */
-  var skirtGeo = new THREE.BoxGeometry(0.07, 0.2, room.roomLen + 0.1);
-  [-WALL_X + 0.035, WALL_X - 0.035].forEach(function(x) {
-    var skirt = new THREE.Mesh(skirtGeo, baseMat); skirt.position.set(cx + x, 0.1, zMid); g.add(skirt);
+  /* ── Baseboard — two-part ── */
+  [-WALL_X + 0.04, WALL_X - 0.04].forEach(function(x) {
+    var sk1 = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.28, room.roomLen + 0.12), baseMat);
+    sk1.position.set(cx + x, 0.14, zMid); g.add(sk1);
+    var sk2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.04, room.roomLen + 0.12), mouldMat);
+    sk2.position.set(cx + x, 0.3, zMid); g.add(sk2);
   });
 
-  /* Skylights */
-  var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture() });
-  var skylightCount = Math.max(1, Math.floor(room.roomLen / 10));
+  /* ── Skylights — recessed coffers with glazing bars + cool fill ── */
+  var skyMat = new THREE.MeshBasicMaterial({ map: getSkyTexture(), transparent: true, opacity: 0.92 });
+  var skylightCount = Math.max(1, Math.floor(room.roomLen / 9));
   for (var ski = 0; ski < skylightCount; ski++) {
     var sz = room.zStart - ROOM_PAD - (ski + 0.5) * ((room.roomLen - ROOM_PAD * 2) / skylightCount);
-    var pane = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 1.6), skyMat);
-    pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.01, sz); g.add(pane);
-    [[0, -0.85, 3.2, 0.08], [0, 0.85, 3.2, 0.08], [-1.55, 0, 0.08, 1.8], [1.55, 0, 0.08, 1.8]].forEach(function(t) {
-      var tr = new THREE.Mesh(new THREE.BoxGeometry(t[2], 0.06, t[3]), trimMat);
-      tr.position.set(cx + t[0], ROOM_H - 0.02, sz + t[1]); g.add(tr);
+    /* Recessed box surround */
+    var surW = 3.8, surL = 2.0;
+    /* Pane */
+    var pane = new THREE.Mesh(new THREE.PlaneGeometry(surW - 0.18, surL - 0.18), skyMat);
+    pane.rotation.x = Math.PI / 2; pane.position.set(cx, ROOM_H - 0.008, sz); g.add(pane);
+    /* Glazing bars */
+    var barMat2 = trimMat;
+    [[0, surL * 0.5, surW, 0.06, 0.05], [0, -surL * 0.5, surW, 0.06, 0.05],  /* long rails */
+     [-surW * 0.5, 0, 0.06, surL, 0.05], [surW * 0.5, 0, 0.06, surL, 0.05],   /* end caps */
+     [0, 0, surW, 0.05, 0.05], [-surW * 0.33, 0, 0.05, surL, 0.05], [surW * 0.33, 0, 0.05, surL, 0.05] /* dividers */
+    ].forEach(function(b) {
+      var bar = new THREE.Mesh(new THREE.BoxGeometry(b[2], b[4] * 2, b[3]), barMat2);
+      bar.position.set(cx + b[0], ROOM_H - 0.01, sz + b[1]); g.add(bar);
     });
-    var skyLight = new THREE.PointLight(0xc8e4f5, 0.55, 11);
-    skyLight.position.set(cx, ROOM_H - 0.1, sz); g.add(skyLight);
+    /* Cool sky fill light */
+    var skyLight = new THREE.PointLight(0xd4eaff, 0.6, 13);
+    skyLight.position.set(cx, ROOM_H - 0.15, sz); g.add(skyLight);
   }
 
-  /* Wall-wash lights (reduced count — ~1 per 3 art slots instead of per-slot) */
+  /* ── Ceiling track lighting — matte black rail with warm spots ── */
   var slotZStart = room.zStart - ROOM_PAD;
-  var lightsPerSide = Math.max(1, Math.ceil(room.slotsPerSide / 3));
-  for (var li = 0; li < lightsPerSide; li++) {
-    var lz = slotZStart - ((li + 0.5) * room.slotsPerSide / lightsPerSide) * SLOT_SPACING;
-    var sl = new THREE.RectAreaLight(0xffe4b8, 3.8, 2.8, 0.5);
-    sl.position.set(cx - WALL_X + 1.8, ROOM_H - 0.3, lz);
-    sl.lookAt(cx - WALL_X + 0.1, 1.8, lz); g.add(sl);
-    var sr = new THREE.RectAreaLight(0xffe4b8, 3.8, 2.8, 0.5);
-    sr.position.set(cx + WALL_X - 1.8, ROOM_H - 0.3, lz);
-    sr.lookAt(cx + WALL_X - 0.1, 1.8, lz); g.add(sr);
+  for (var si = 0; si < room.slotsPerSide; si++) {
+    var tz = slotZStart - si * SLOT_SPACING;
+    /* Track rail runs wall-to-wall */
+    var rail2 = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W - 1.0, 0.05, 0.06), trackMat);
+    rail2.position.set(cx, ROOM_H - 0.04, tz); g.add(rail2);
+    /* Two spotlight cones — one per side — aimed at art height */
+    [-WALL_X + 1.0, WALL_X - 1.0].forEach(function(sx2) {
+      /* Fixture body */
+      var fix = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.05, 0.18, 12), trackMat);
+      fix.position.set(cx + sx2, ROOM_H - 0.13, tz); g.add(fix);
+      /* Spot light — tight beam, warm white */
+      var spot = new THREE.SpotLight(0xfff2d8, 2.2, 8.0, Math.PI / 9, 0.28, 1.6);
+      spot.position.set(cx + sx2, ROOM_H - 0.22, tz);
+      spot.target.position.set(cx + sx2 * 0.85, 2.1, tz);
+      g.add(spot); g.add(spot.target);
+    });
   }
 
-  /* Ambient fill (single point light per room) */
-  var fillLight = new THREE.PointLight(0xfff4e8, 0.16, Math.max(14, room.roomLen * 0.7));
-  fillLight.position.set(cx, ROOM_H - 0.2, zMid); g.add(fillLight);
+  /* ── Ambient fill ── */
+  var fillLight = new THREE.PointLight(0xffeedd, 0.14, Math.max(16, room.roomLen * 0.75));
+  fillLight.position.set(cx, ROOM_H - 0.3, zMid); g.add(fillLight);
 
-  /* Bench */
+  /* ── Bench — ebonised steel + stone seat ── */
   if (room.slotsPerSide >= 3) {
     var bench = buildBench(); bench.position.set(cx, 0, zMid); g.add(bench);
   }
 
-  /* Room sign */
+  /* ── Room number plaque — mounted near entrance top-right ── */
   var roomCanvas = document.createElement("canvas");
-  roomCanvas.width = 256; roomCanvas.height = 64;
+  roomCanvas.width = 256; roomCanvas.height = 80;
   var rctx = roomCanvas.getContext("2d");
-  rctx.clearRect(0, 0, 256, 64);
-  rctx.fillStyle = "#82848a";
-  rctx.font = '500 20px "IBM Plex Mono", monospace';
+  rctx.clearRect(0, 0, 256, 80);
+  /* Pale stone background */
+  rctx.fillStyle = "#e8e0d2"; rctx.fillRect(0, 0, 256, 80);
+  /* Top brass rule */
+  rctx.fillStyle = "#9e8c5c"; rctx.fillRect(10, 10, 236, 3);
+  /* Bottom brass rule */
+  rctx.fillStyle = "#9e8c5c"; rctx.fillRect(10, 67, 236, 3);
+  rctx.fillStyle = "#3a3830";
+  rctx.font = '600 24px "IBM Plex Mono", monospace';
   rctx.textAlign = "center";
-  rctx.fillText("room " + (ri + 1), 128, 38);
+  rctx.fillText("GALLERY " + (ri + 1), 128, 48);
   var roomTex = new THREE.CanvasTexture(roomCanvas);
   roomTex.colorSpace = THREE.SRGBColorSpace;
-  var roomSign = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.2, 0.3),
-    new THREE.MeshBasicMaterial({ map: roomTex, transparent: true })
+  var plaqueBacking = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 0.5, 0.025),
+    new THREE.MeshStandardMaterial({ color: "#d8cfc0", roughness: 0.35, metalness: 0.12 })
   );
-  roomSign.position.set(cx, ROOM_H - 0.4, room.zStart - 0.02); g.add(roomSign);
+  plaqueBacking.position.set(cx + WALL_X - 1.8, ROOM_H - 0.55, room.zStart - 0.04);
+  plaqueBacking.rotation.y = Math.PI; g.add(plaqueBacking);
+  var roomSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.44, 0.44),
+    new THREE.MeshBasicMaterial({ map: roomTex, transparent: false })
+  );
+  roomSign.position.set(cx + WALL_X - 1.8, ROOM_H - 0.55, room.zStart - 0.028);
+  roomSign.rotation.y = Math.PI; g.add(roomSign);
 
-  /* Art slot positions */
+  /* ── Art slot positions ── */
   room.artSlots = [];
   var WO = ROOM_W / 2;
   for (var i = 0; i < room.slotsPerSide; i++) {
@@ -419,10 +478,20 @@ function buildRoom(ri) {
     room.artSlots.push({ pos: new THREE.Vector3(cx + WO - 0.05, 2.1, z), ry: -Math.PI / 2 });
   }
 
-  /* Podium in first room */
-  if (ri === 0) {
-    var podium = buildPodium(); podium.position.set(cx, 0, room.zStart - 3); g.add(podium);
+  /* ── Pedestal between every pair of artworks on the centre line ── */
+  var pedCount = Math.floor(room.slotsPerSide / 2);
+  for (var pi = 0; pi < pedCount; pi++) {
+    var pz = slotZStart - (pi * 2 + 0.5) * SLOT_SPACING;
+    var ped = buildPedestal();
+    ped.position.set(cx, 0, pz); g.add(ped);
   }
+
+  /* ── Podium with red button in EVERY room ── */
+  var podium = buildPodium(ri);
+  podium.position.set(cx + WALL_X * 0.35, 0, room.zStart - 2.8);
+  g.add(podium);
+  /* Register the button mesh for this room's podium */
+  if (ri === 0) podiumBtnMesh = podium.userData.btnMesh;
 
   galleryGroup.add(g);
 
@@ -471,15 +540,17 @@ function unloadRoom(ri) {
 
   unloadRoomArt(ri);
 
+  /* When we're unloading room 0 (rare — only if ROOM_UNLOAD_RANGE rooms away),
+     clear the podiumBtnMesh so the raycaster doesn't reference stale geometry */
   if (ri === 0) podiumBtnMesh = null;
 
   room.built = false;
   room.artSlots = [];
 }
 
-var sharedMats = [floorMat, wallMat, panelMat, ceilMat, mouldMat, baseMat,
+var sharedMats = [floorMat, wallMat, accentWallMat, panelMat, ceilMat, mouldMat, baseMat,
   frameMat, backMat, placeMat, benchMat, benchSeatMat, corrFloorMat,
-  archMat, inlayMat, beamMat, trimMat];
+  archMat, inlayMat, beamMat, trimMat, trackMat, pedestalMat];
 function isSharedMaterial(m) {
   return sharedMats.indexOf(m) >= 0;
 }
@@ -571,17 +642,42 @@ function addCorridorCross(parent, cx, zMid, w, h) {
   var bw = new THREE.Mesh(wallGeo, wallMat); bw.rotation.y = Math.PI; bw.position.set(cx, ROOM_H / 2, zMid + h / 2); parent.add(bw);
 }
 
-/* ── Bench ────────────────────────────────────────────────────────────────── */
+/* ── Bench — ebonised steel frame, pale stone upholstered seat ──────────── */
 function buildBench() {
   var g = new THREE.Group();
-  var seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.5), benchSeatMat);
-  seat.position.y = 0.46; seat.castShadow = true; seat.receiveShadow = true; g.add(seat);
-  [[-0.82, -0.18], [-0.82, 0.18], [0.82, -0.18], [0.82, 0.18]].forEach(function(p) {
-    var leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.43, 0.06), benchMat);
-    leg.position.set(p[0], 0.215, p[1]); leg.castShadow = true; g.add(leg);
+  /* Seat cushion */
+  var seat = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.07, 0.52), benchSeatMat);
+  seat.position.y = 0.48; seat.castShadow = true; seat.receiveShadow = true; g.add(seat);
+  /* Seat chamfer edge (thin dark strip) */
+  var edge = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.04, 0.54), benchMat);
+  edge.position.y = 0.445; g.add(edge);
+  /* Four legs — square tube profile */
+  [[-0.9, -0.2], [-0.9, 0.2], [0.9, -0.2], [0.9, 0.2]].forEach(function(p) {
+    var leg = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.42, 0.055), benchMat);
+    leg.position.set(p[0], 0.21, p[1]); leg.castShadow = true; g.add(leg);
   });
-  var stretcher = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.04, 0.04), benchMat);
-  stretcher.position.set(0, 0.14, 0); g.add(stretcher);
+  /* Low H-frame stretcher */
+  var stretcherH = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.04, 0.04), benchMat);
+  stretcherH.position.set(0, 0.13, 0); g.add(stretcherH);
+  var stretcherL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.36), benchMat);
+  stretcherL.position.set(-0.86, 0.13, 0); g.add(stretcherL);
+  var stretcherR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.36), benchMat);
+  stretcherR.position.set(0.86, 0.13, 0); g.add(stretcherR);
+  return g;
+}
+
+/* ── Pedestal — pale travertine column ───────────────────────────────────── */
+function buildPedestal() {
+  var g = new THREE.Group();
+  /* Cap */
+  var cap = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.04, 0.58), pedestalMat);
+  cap.position.y = 1.12; g.add(cap);
+  /* Shaft with slight taper */
+  var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.24, 1.08, 32), pedestalMat);
+  shaft.position.y = 0.56; g.add(shaft);
+  /* Base plinth */
+  var base = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.06, 0.56), pedestalMat);
+  base.position.y = 0.03; g.add(base);
   return g;
 }
 
@@ -612,17 +708,26 @@ function buildMuseum(totalCount) {
 
 /* ── Label texture ────────────────────────────────────────────────────────── */
 function makeLabelTex(tokenId, type, ap) {
+  /* Museum card — wider, elegant, with brass rule accent */
   var c = document.createElement("canvas");
-  c.width = 512; c.height = 72;
+  c.width = 640; c.height = 96;
   var ctx = c.getContext("2d");
-  ctx.fillStyle = "rgba(240,240,238,0.92)"; ctx.fillRect(0, 0, 512, 72);
-  ctx.fillStyle = "rgba(72,73,75,0.45)"; ctx.fillRect(0, 0, 3, 72);
-  ctx.fillStyle = "#48494b";
-  ctx.font = '500 22px "IBM Plex Mono", monospace';
-  ctx.fillText("normie #" + tokenId, 14, 32);
-  ctx.fillStyle = "#82848a";
-  ctx.font = '400 16px "IBM Plex Mono", monospace';
-  ctx.fillText([type, ap ? ap + " ap" : null].filter(Boolean).join(" \u00b7 "), 14, 56);
+  /* Warm linen background */
+  ctx.fillStyle = "#f0ebe0"; ctx.fillRect(0, 0, 640, 96);
+  /* Left brass rule accent */
+  ctx.fillStyle = "#9e8c5c"; ctx.fillRect(0, 0, 4, 96);
+  /* Light top rule */
+  ctx.fillStyle = "rgba(158,140,92,0.4)"; ctx.fillRect(18, 12, 604, 1);
+  /* Bottom rule */
+  ctx.fillStyle = "rgba(158,140,92,0.4)"; ctx.fillRect(18, 82, 604, 1);
+  /* Title — normie ID */
+  ctx.fillStyle = "#2a2820";
+  ctx.font = '600 28px "IBM Plex Mono", monospace';
+  ctx.fillText("normie #" + tokenId, 20, 44);
+  /* Sub-line — type · ap */
+  ctx.fillStyle = "#8a826e";
+  ctx.font = '400 20px "IBM Plex Mono", monospace';
+  ctx.fillText([type, ap ? ap + " ap" : null].filter(Boolean).join(" \u00b7 "), 20, 74);
   var tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -900,39 +1005,91 @@ function checkRoomLoading() {
 
 /* ── Podium ───────────────────────────────────────────────────────────────── */
 function makePodiumLabel() {
-  var c = document.createElement("canvas"); c.width = 256; c.height = 64;
+  /* Large, readable museum-style instruction card - 4× bigger canvas */
+  var c = document.createElement("canvas"); c.width = 512; c.height = 256;
   var ctx = c.getContext("2d");
-  ctx.fillStyle = "rgba(240,240,238,0.92)"; ctx.fillRect(0, 0, 256, 64);
-  ctx.fillStyle = "#666666"; ctx.font = 'bold 13px "IBM Plex Mono", monospace'; ctx.textAlign = "center";
-  ctx.fillText("TOGGLE FRAMES", 128, 26);
-  ctx.fillStyle = "#999999"; ctx.font = '11px "IBM Plex Mono", monospace';
-  ctx.fillText("[E] or click", 128, 48);
+  /* Off-white linen background */
+  ctx.fillStyle = "#f0ebe0"; ctx.fillRect(0, 0, 512, 256);
+  /* Brass border rules */
+  ctx.strokeStyle = "#9e8c5c"; ctx.lineWidth = 3;
+  ctx.strokeRect(10, 10, 492, 236);
+  ctx.strokeRect(16, 16, 480, 224);
+  /* Headline */
+  ctx.fillStyle = "#2a2820";
+  ctx.font = 'bold 44px "IBM Plex Mono", monospace';
+  ctx.textAlign = "center";
+  ctx.fillText("TOGGLE FRAMES", 256, 95);
+  /* Dividing rule */
+  ctx.fillStyle = "#9e8c5c"; ctx.fillRect(80, 112, 352, 2);
+  /* Sub-text */
+  ctx.fillStyle = "#7a7260";
+  ctx.font = '500 32px "IBM Plex Mono", monospace';
+  ctx.fillText("press  [E]  or  click", 256, 168);
+  /* Small italic note */
+  ctx.fillStyle = "#a09880";
+  ctx.font = 'italic 22px "IBM Plex Mono", monospace';
+  ctx.fillText("toggle voxel / flat view", 256, 218);
   var tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
 }
 
-function buildPodium() {
+function buildPodium(ri) {
   var group = new THREE.Group();
-  var base = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 0.92, 32),
-    new THREE.MeshStandardMaterial({ color: "#eaeae8", roughness: 0.25, metalness: 0.05 }));
-  base.position.y = 0.46; base.castShadow = true; base.receiveShadow = true; group.add(base);
-  var plate = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.035, 32),
-    new THREE.MeshStandardMaterial({ color: "#d8d8d6", roughness: 0.3, metalness: 0.12 }));
-  plate.position.y = 0.94; plate.castShadow = true; group.add(plate);
-  var housing = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.03, 24),
-    new THREE.MeshStandardMaterial({ color: "#555555", roughness: 0.2, metalness: 0.7 }));
-  housing.position.y = 0.965; group.add(housing);
-  var btn = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.04, 24),
-    new THREE.MeshStandardMaterial({ color: "#cc2020", roughness: 0.35, metalness: 0.1,
-      emissive: new THREE.Color("#330808"), emissiveIntensity: 0.4 }));
-  btn.position.y = 0.99; btn.userData.isButton = true; btn.castShadow = true;
-  podiumBtnMesh = btn; group.add(btn);
-  var podLight = new THREE.PointLight(0xff3333, 0.4, 1.8); podLight.position.y = 1.15; group.add(podLight);
-  var signMat = new THREE.MeshBasicMaterial({ map: makePodiumLabel(), transparent: true });
-  [{ p: [0, 0.5, 0.31], ry: 0 }, { p: [0, 0.5, -0.31], ry: Math.PI },
-   { p: [-0.31, 0.5, 0], ry: Math.PI / 2 }, { p: [0.31, 0.5, 0], ry: -Math.PI / 2 }]
-  .forEach(function(s) {
-    var sign = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.1), signMat);
-    sign.position.set(s.p[0], s.p[1], s.p[2]); sign.rotation.y = s.ry; group.add(sign);
+  /* Stepped stone base — two tiers */
+  var baseLow = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.1, 0.72),
+    new THREE.MeshPhysicalMaterial({ color: "#d4cfc4", roughness: 0.22, metalness: 0.06,
+      clearcoat: 0.5, clearcoatRoughness: 0.1 }));
+  baseLow.position.y = 0.05; baseLow.receiveShadow = true; group.add(baseLow);
+  var baseHigh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.1, 0.6),
+    new THREE.MeshPhysicalMaterial({ color: "#cac4b8", roughness: 0.2, metalness: 0.08,
+      clearcoat: 0.55, clearcoatRoughness: 0.08 }));
+  baseHigh.position.y = 0.15; baseHigh.receiveShadow = true; group.add(baseHigh);
+  /* Column shaft — faceted hexagonal */
+  var shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.82, 6),
+    new THREE.MeshPhysicalMaterial({ color: "#e0dbd0", roughness: 0.18, metalness: 0.05,
+      clearcoat: 0.65, clearcoatRoughness: 0.08 }));
+  shaft.position.y = 0.61; shaft.castShadow = true; group.add(shaft);
+  /* Capital — flared disc */
+  var capital = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.22, 0.06, 32),
+    new THREE.MeshPhysicalMaterial({ color: "#d8d2c6", roughness: 0.15, metalness: 0.1,
+      clearcoat: 0.7, clearcoatRoughness: 0.06 }));
+  capital.position.y = 1.05; capital.castShadow = true; group.add(capital);
+  /* Button plate */
+  var plate = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.04, 32),
+    new THREE.MeshStandardMaterial({ color: "#c8c2b4", roughness: 0.28, metalness: 0.14 }));
+  plate.position.y = 1.1; group.add(plate);
+  /* Button housing */
+  var housing = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.04, 24),
+    new THREE.MeshStandardMaterial({ color: "#3a3830", roughness: 0.18, metalness: 0.78 }));
+  housing.position.y = 1.13; group.add(housing);
+  /* The button itself */
+  var btn = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.045, 24),
+    new THREE.MeshStandardMaterial({ color: "#cc1a1a", roughness: 0.28, metalness: 0.08,
+      emissive: new THREE.Color("#3a0404"), emissiveIntensity: 0.5 }));
+  btn.position.y = 1.165; btn.userData.isButton = true; btn.castShadow = true;
+  btn.userData.roomIdx = ri;
+  group.add(btn);
+  group.userData.btnMesh = btn;
+  /* Red glow under button */
+  var podLight = new THREE.PointLight(0xff2200, 0.55, 2.4);
+  podLight.position.y = 1.28; group.add(podLight);
+  /* Instruction signs — 4 faces, large and readable */
+  var signTex = makePodiumLabel();
+  var signMat = new THREE.MeshBasicMaterial({ map: signTex, transparent: false });
+  var signW = 0.88, signH = 0.44; /* ~4× previous size */
+  [
+    { p: [0,   0.62,  0.36], ry: 0           },
+    { p: [0,   0.62, -0.36], ry: Math.PI     },
+    { p: [-0.36, 0.62, 0],   ry: Math.PI / 2 },
+    { p: [ 0.36, 0.62, 0],   ry: -Math.PI / 2},
+  ].forEach(function(s) {
+    /* Backing plate for sign */
+    var bp = new THREE.Mesh(new THREE.BoxGeometry(signW + 0.04, signH + 0.04, 0.02),
+      new THREE.MeshStandardMaterial({ color: "#2a2820", roughness: 0.4, metalness: 0.1 }));
+    bp.position.set(s.p[0], s.p[1], s.p[2]); bp.rotation.y = s.ry; group.add(bp);
+    var sign = new THREE.Mesh(new THREE.PlaneGeometry(signW, signH), signMat);
+    var offset = 0.012;
+    var ox = Math.sin(s.ry) * offset, oz = Math.cos(s.ry) * offset;
+    sign.position.set(s.p[0] + ox, s.p[1], s.p[2] + oz); sign.rotation.y = s.ry; group.add(sign);
   });
   return group;
 }
@@ -941,12 +1098,32 @@ function buildPodium() {
 var raycaster = new THREE.Raycaster(); raycaster.far = 3.5;
 var screenCenter = new THREE.Vector2(0, 0);
 
+function getActivePodiumBtn() {
+  /* Find the podium button in the currently-built room the player is in */
+  for (var ri = 0; ri < rooms.length; ri++) {
+    if (!rooms[ri].built || !rooms[ri].group) continue;
+    var dist = Math.abs(ri - currentRoomIdx);
+    if (dist > 1) continue;
+    var g = rooms[ri].group;
+    for (var ci = 0; ci < g.children.length; ci++) {
+      var child = g.children[ci];
+      if (child.userData && child.userData.btnMesh) return child.userData.btnMesh;
+    }
+    /* Also check directly */
+    var found = null;
+    g.traverse(function(c) { if (c.userData && c.userData.isButton) found = c; });
+    if (found) return found;
+  }
+  return podiumBtnMesh;
+}
+
 function checkButtonInteraction() {
-  if (!inMuseum || !podiumBtnMesh) {
+  var activeBtn = getActivePodiumBtn();
+  if (!inMuseum || !activeBtn) {
     if (buttonHovered) { buttonHovered = false; updateInteractionHint(false); } return;
   }
   raycaster.setFromCamera(screenCenter, camera);
-  var intersects = raycaster.intersectObject(podiumBtnMesh);
+  var intersects = raycaster.intersectObject(activeBtn);
   var hit = intersects.length > 0 && intersects[0].distance < 3.5;
   if (hit !== buttonHovered) { buttonHovered = hit; updateInteractionHint(hit); }
 }
@@ -957,7 +1134,8 @@ function updateInteractionHint(show) {
 }
 
 function pressButton() {
-  if (!podiumBtnMesh || btnAnimating) return;
+  var activeBtn = getActivePodiumBtn();
+  if (!activeBtn || btnAnimating) return;
   framesVisible = !framesVisible;
   for (var ai = 0; ai < artGroup.children.length; ai++) {
     artGroup.children[ai].traverse(function(child) {
@@ -967,10 +1145,10 @@ function pressButton() {
     });
   }
   btnAnimating = true;
-  var origY = podiumBtnMesh.position.y;
-  podiumBtnMesh.position.y = origY - 0.02;
+  var origY = activeBtn.position.y;
+  activeBtn.position.y = origY - 0.022;
   playButtonClick();
-  setTimeout(function() { podiumBtnMesh.position.y = origY; btnAnimating = false; }, 150);
+  setTimeout(function() { activeBtn.position.y = origY; btnAnimating = false; }, 150);
 }
 
 function tryInteract() {
