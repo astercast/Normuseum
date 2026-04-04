@@ -99,18 +99,9 @@ var isDragging = false;
 var dragVelocity = new THREE.Vector3();
 var droppedArts = [];        /* { group, velocity, onGround } */
 
-/* ── Time scale + arms ────────────────────────────────────────────────────── */
+/* ── Time scale ───────────────────────────────────────────────────────────── */
 var timeScale = 1.0;
-var showArms = true;
 var showCrosshair = true;
-var walkSwing = 0;
-var idleSwing = 0;
-var grabAnim = 0;
-var armsGroup = new THREE.Group();
-var armRGroup = new THREE.Group();
-var armLGroup = new THREE.Group();
-var armRElbow = new THREE.Group();
-var armLElbow = new THREE.Group();
 
 /* ── DOM refs ─────────────────────────────────────────────────────────────── */
 const $ = (id) => document.getElementById(id);
@@ -198,27 +189,7 @@ if (!isTouch) {
   camera.rotation.order = "YXZ";
 }
 
-/* ── Build voxel arms attached to camera ─────────────────────────────────── */
-(function buildArms() {
-  var armMat = new THREE.MeshStandardMaterial({ color: "#1a1818", roughness: 0.85 });
-  function makeArm(shoulder, elbow) {
-    /* Upper arm — shoulder to elbow */
-    var upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.065, 0.13), armMat);
-    upper.position.set(0, 0, -0.065); shoulder.add(upper);
-    /* Elbow pivot lives at the far end of the upper arm */
-    elbow.position.set(0, 0, -0.13);
-    /* Forearm — elbow to wrist */
-    var fore = new THREE.Mesh(new THREE.BoxGeometry(0.050, 0.058, 0.11), armMat);
-    fore.position.set(0, -0.018, -0.055); elbow.add(fore);
-    shoulder.add(elbow);
-  }
-  makeArm(armRGroup, armRElbow);
-  makeArm(armLGroup, armLElbow);
-  armRGroup.position.set( 0.21, -0.34, -0.30);
-  armLGroup.position.set(-0.21, -0.34, -0.30);
-  armsGroup.add(armRGroup); armsGroup.add(armLGroup);
-  camera.add(armsGroup);
-})();
+
 
 /* ── Lights ───────────────────────────────────────────────────────────────── */
 scene.add(new THREE.AmbientLight(0xffeedd, 0.32));
@@ -453,8 +424,29 @@ function buildRoom(ri) {
   var wallGeo = new THREE.PlaneGeometry(room.roomLen, ROOM_H);
   var lw = new THREE.Mesh(wallGeo, wallMat);
   lw.rotation.y = Math.PI / 2; lw.position.set(cx - WALL_X, ROOM_H / 2, zMid); lw.receiveShadow = true; g.add(lw);
-  var rw = new THREE.Mesh(wallGeo, wallMat);
-  rw.rotation.y = -Math.PI / 2; rw.position.set(cx + WALL_X, ROOM_H / 2, zMid); rw.receiveShadow = true; g.add(rw);
+  /* Right wall — room 0 has a gap for the secret sliding door */
+  if (ri === 0) {
+    var _doorZ = room.zStart - 6.0;
+    var _gapN = _doorZ + ALCOVE_L / 2;
+    var _gapS = _doorZ - ALCOVE_L / 2;
+    var _seg1Len = room.zStart - _gapN;
+    if (_seg1Len > 0.1) {
+      var rwSeg1 = new THREE.Mesh(new THREE.PlaneGeometry(_seg1Len, ROOM_H), wallMat);
+      rwSeg1.rotation.y = -Math.PI / 2;
+      rwSeg1.position.set(cx + WALL_X, ROOM_H / 2, (room.zStart + _gapN) / 2);
+      rwSeg1.receiveShadow = true; g.add(rwSeg1);
+    }
+    var _seg2Len = _gapS - room.zEnd;
+    if (_seg2Len > 0.1) {
+      var rwSeg2 = new THREE.Mesh(new THREE.PlaneGeometry(_seg2Len, ROOM_H), wallMat);
+      rwSeg2.rotation.y = -Math.PI / 2;
+      rwSeg2.position.set(cx + WALL_X, ROOM_H / 2, (_gapS + room.zEnd) / 2);
+      rwSeg2.receiveShadow = true; g.add(rwSeg2);
+    }
+  } else {
+    var rw = new THREE.Mesh(wallGeo, wallMat);
+    rw.rotation.y = -Math.PI / 2; rw.position.set(cx + WALL_X, ROOM_H / 2, zMid); rw.receiveShadow = true; g.add(rw);
+  }
 
   /* ── End walls ── */
   if (ri === 0) {
@@ -602,34 +594,18 @@ function buildRoom(ri) {
     surfaceBoxes.push({ minX: fp.x - 0.36, maxX: fp.x + 0.36, minZ: fp.z - 0.36, maxZ: fp.z + 0.36, topY: 1.08 + 1.7 });
   });
 
-  /* ── Secret explode button — on the apple pedestal ── */
+  /* ── Secret door button + hidden room (room 0 only) ── */
   if (ri === 0) {
-    var applePed = fruitPedestals.find(function(fp) { return fp.isApple; });
-    if (applePed) {
-      var sBtn = buildSecretButton();
-      /* Face inward (toward room center) from the pedestal shaft */
-      var facingRight = applePed.side < 0;  /* apple is on left wall, so button faces right (+X) */
-      sBtn.position.set(
-        facingRight ? 0.26 : -0.26,  /* protrude from shaft side */
-        0.62,                          /* comfortable waist height */
-        0
-      );
-      sBtn.rotation.y = facingRight ? -Math.PI / 2 : Math.PI / 2;
-      applePed.group.add(sBtn);
-      secretBtnMesh = sBtn.userData.btnMesh;
-    }
-
-    /* ── Secret door button — right wall, just inside the entrance ── */
+    var dbz = room.zStart - 6.0;
+    /* Door button — brass panel on right wall, just before the hidden gap */
     var dBtn = buildDoorButton();
-    /* ~4.5 m from the entrance — player encounters it on their first walk-in */
-    var dbz = room.zStart - 4.5;
     var dbx = cx + WALL_X - 0.018;
-    dBtn.position.set(dbx, 1.55, dbz);
-    dBtn.rotation.y = Math.PI / 2;  /* faces into room (left) */
+    dBtn.position.set(dbx, 2.0, room.zStart - 3.2);
+    dBtn.rotation.y = Math.PI / 2;  /* faces into room */
     g.add(dBtn);
     doorBtnMesh = dBtn.userData.btnMesh;
 
-    /* ── Hidden alcove room — extends off the right wall ── */
+    /* Hidden alcove room — extends off the right wall */
     buildHiddenRoom(g, cx + WALL_X, dbz, ROOM_H);
   }
 
@@ -1492,38 +1468,50 @@ function buildSecretButton() {
   return group;
 }
 
-/* ── Secret door button — warm taupe, visible but blends in ─────────────── */
+/* ── Secret door button — brass panel, noticeable if you look ─────────────── */
 function buildDoorButton() {
   var group = new THREE.Group();
-  /* Square backing plate — slightly darker warm tone */
+  /* Brass backing plate */
   var plate = new THREE.Mesh(
-    new THREE.BoxGeometry(0.10, 0.10, 0.015),
-    new THREE.MeshStandardMaterial({ color: "#b8b0a4", roughness: 0.70, metalness: 0.06 })
+    new THREE.BoxGeometry(0.20, 0.20, 0.016),
+    new THREE.MeshStandardMaterial({ color: "#8a7a55", roughness: 0.30, metalness: 0.50 })
   );
   plate.position.z = 0.008; group.add(plate);
-  /* Round button — protrudes, warm off-white */
+  /* Thin frame border around plate */
+  var frame = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.24, 0.008),
+    new THREE.MeshStandardMaterial({ color: "#6a5c38", roughness: 0.25, metalness: 0.55 })
+  );
+  frame.position.z = 0.002; group.add(frame);
+  /* Round button — polished brass, clearly distinct */
   var btn = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.030, 0.032, 0.022, 20),
-    new THREE.MeshStandardMaterial({ color: "#cec6ba", roughness: 0.50, metalness: 0.06 })
+    new THREE.CylinderGeometry(0.045, 0.048, 0.024, 24),
+    new THREE.MeshStandardMaterial({ color: "#c8b060", roughness: 0.22, metalness: 0.55 })
   );
   btn.rotation.x = Math.PI / 2;
-  btn.position.z = 0.024;
+  btn.position.z = 0.028;
   btn.userData.isDoorBtn = true;
   group.add(btn);
+  /* Small amber LED indicator dot below button */
+  var led = new THREE.Mesh(
+    new THREE.SphereGeometry(0.012, 12, 12),
+    new THREE.MeshStandardMaterial({ color: "#ff9922", emissive: "#ff8800", emissiveIntensity: 0.6, roughness: 0.3 })
+  );
+  led.position.set(0, -0.065, 0.016); group.add(led);
   group.userData.btnMesh = btn;
   return group;
 }
 
 /* ── Hidden alcove room — built once, always exists, door slides to reveal ─ */
 var ALCOVE_W = 6.0;   /* extends rightward from main room wall */
-var ALCOVE_L = 7.0;   /* along Z */
+var ALCOVE_L = 5.0;   /* along Z */
 var ALCOVE_H = ROOM_H;
 
 function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
   /* The alcove opens to the RIGHT of the main room (positive X direction).
      wallX is the X of the right wall. Alcove extends from wallX outward. */
   var aox = wallX + ALCOVE_W / 2;   /* alcove center X */
-  var aoz = doorZ;                    /* alcove center Z aligned with door button */
+  var aoz = doorZ;                    /* alcove center Z aligned with door */
 
   var hg = new THREE.Group();
   hiddenRoomGroup = hg;
@@ -1536,9 +1524,9 @@ function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
   var ceil = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_W, ALCOVE_L), ceilMat);
   ceil.rotation.x = Math.PI / 2; ceil.position.set(aox, ALCOVE_H, aoz); hg.add(ceil);
 
-  /* Back wall (far right) */
+  /* Back wall (far right) — dark feature wall for dramatic contrast */
   var backWall = new THREE.Mesh(new THREE.PlaneGeometry(ALCOVE_L, ALCOVE_H),
-    new THREE.MeshStandardMaterial({ color: "#1a1814", roughness: 0.92 }));  /* dark feature wall */
+    new THREE.MeshStandardMaterial({ color: "#1a1814", roughness: 0.92 }));
   backWall.rotation.y = -Math.PI / 2;
   backWall.position.set(wallX + ALCOVE_W, ALCOVE_H / 2, aoz); hg.add(backWall);
 
@@ -1551,7 +1539,7 @@ function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
   southWall.rotation.y = Math.PI;
   southWall.position.set(aox, ALCOVE_H / 2, aoz + ALCOVE_L / 2); hg.add(southWall);
 
-  /* Inner face of main room right wall (the opening — just two side pillars) */
+  /* Door-frame pillars at the opening edges */
   var pillarGeo = new THREE.BoxGeometry(0.18, ALCOVE_H, 0.18);
   [[aoz - ALCOVE_L / 2], [aoz + ALCOVE_L / 2]].forEach(function(pz) {
     var p = new THREE.Mesh(pillarGeo, archMat); p.position.set(wallX + 0.09, ALCOVE_H / 2, pz[0]); hg.add(p);
@@ -1569,27 +1557,32 @@ function buildHiddenRoom(parentGroup, wallX, doorZ, roomH) {
   /* ── Quote text plaque below the art ── */
   buildQuotePlaque(hg, wallX + ALCOVE_W - 0.08, aoz, ALCOVE_H);
 
-  /* The door panel — a section of the main room right wall, same material.
-     It slides UP to open. Width = ALCOVE_L, height = ALCOVE_H */
-  var panelGeo = new THREE.BoxGeometry(0.12, ALCOVE_H, ALCOVE_L);
-  var panel = new THREE.Mesh(panelGeo, wallMat.clone());
+  /* ── Explode button on a small pedestal inside the alcove ── */
+  var sPed = buildPedestal();
+  sPed.scale.set(0.6, 0.6, 0.6);
+  var sPedX = wallX + ALCOVE_W * 0.35;
+  var sPedZ = aoz + ALCOVE_L * 0.30;
+  sPed.position.set(sPedX, 0, sPedZ);
+  hg.add(sPed);
+  var sBtn = buildSecretButton();
+  sBtn.position.set(sPedX, 1.16 * 0.6 + 0.01, sPedZ);
+  sBtn.rotation.x = -Math.PI / 2;  /* button faces UP on pedestal top */
+  hg.add(sBtn);
+  secretBtnMesh = sBtn.userData.btnMesh;
+
+  /* Door panel — thin wall section, perfectly flush, slides UP to open */
+  var panelGeo = new THREE.BoxGeometry(0.04, ALCOVE_H, ALCOVE_L);
+  var panel = new THREE.Mesh(panelGeo, wallMat);
   doorPanelOrigY = ALCOVE_H / 2;
-  panel.position.set(wallX - 0.06, doorPanelOrigY, aoz);
+  panel.position.set(wallX, doorPanelOrigY, aoz);
   doorPanel = panel;
-  hg.add(panel);
+  parentGroup.add(panel);  /* panel is always visible as part of the wall */
 
-  /* Start hidden — the alcove geometry is always in scene but we hide the group */
-  /* Only the door panel is visible (it IS the wall). The rest is behind it. */
-  hg.visible = false;  /* whole group invisible until door opens */
+  /* Alcove geometry starts hidden — revealed when door opens */
+  hg.visible = false;
+  parentGroup.add(hg);
 
-  /* Re-show only the door panel (it's part of the wall) */
-  panel.visible = true;  /* will be detached visually — panel slides as part of hg */
-  /* Actually we need the panel visible always as part of the wall. Add to parentGroup separately */
-  parentGroup.add(panel);   /* panel lives in gallery group always */
-  parentGroup.add(hg);      /* hidden room also in gallery group, starts hidden */
-  hiddenRoomGroup = hg;
-
-  /* Store door zone info for walk zone activation */
+  /* Walk zone for the alcove — activated when door opens */
   hiddenRoomWalkZone = {
     minX: wallX, maxX: wallX + ALCOVE_W - 0.3,
     minZ: aoz - ALCOVE_L / 2 + 0.3, maxZ: aoz + ALCOVE_L / 2 - 0.3
@@ -2687,13 +2680,6 @@ document.addEventListener("click", function(e) {
   });
   var tss = $("timeSpeedSlider");
   if (tss) tss.addEventListener("input", function() { timeScale = parseFloat(this.value); });
-  var armsEl = $("armsToggle");
-  if (armsEl) {
-    armsEl.checked = showArms;
-    armsEl.addEventListener("change", function() {
-      showArms = this.checked; armsGroup.visible = showArms && !isSitting;
-    });
-  }
   var xhEl = $("crosshairToggle");
   if (xhEl) {
     xhEl.checked = showCrosshair;
@@ -3074,51 +3060,7 @@ function easeOutBack(t) {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-/* ── Arms tick ────────────────────────────────────────────────────────────── */
-function tickArms(dt) {
-  var visible = showArms && !isSitting;
-  armsGroup.visible = visible;
-  if (!visible) return;
 
-  var moving    = keys.w || keys.s || keys.a || keys.d;
-  var sprinting = moving && keys.shift;
-
-  /* Walk + idle clocks */
-  if (moving) walkSwing += dt * (sprinting ? 10.5 : 7.8);
-  idleSwing += dt * 0.95;
-
-  /* Grab lerp */
-  var targetGrab = isDragging ? 1.0 : 0.0;
-  grabAnim += (targetGrab - grabAnim) * Math.min(1, dt * 9);
-
-  /* Swing amplitudes */
-  var walkAmp = moving ? (sprinting ? 0.26 : 0.16) : 0;
-  var idleAmp = moving ? 0 : 0.038;
-
-  var swingR = Math.sin(walkSwing)           * walkAmp + Math.sin(idleSwing)       * idleAmp;
-  var swingL = Math.sin(walkSwing + Math.PI) * walkAmp + Math.sin(idleSwing + 0.7) * idleAmp;
-
-  /* Subtle Y bob on each step (double-freq) */
-  var yBob = moving ? Math.sin(walkSwing * 2) * 0.009 : 0;
-
-  /* Slight outward Z lean that rocks with walk */
-  var zSplayR = -0.05 + Math.sin(walkSwing)           * walkAmp * 0.18;
-  var zSplayL =  0.05 - Math.sin(walkSwing + Math.PI) * walkAmp * 0.18;
-
-  armRGroup.position.set( 0.21, -0.34 + yBob, -0.30);
-  armLGroup.position.set(-0.21, -0.34 + yBob, -0.30);
-
-  /* Shoulder rotation: arm swing + right arm reaches forward when grabbing */
-  armRGroup.rotation.x = swingR + grabAnim * (-0.32);
-  armLGroup.rotation.x = swingL;
-  armRGroup.rotation.z = zSplayR;
-  armLGroup.rotation.z = zSplayL;
-
-  /* Elbow bend: natural droop, tightens when grabbing */
-  var elbowBend = 0.40 + grabAnim * 0.20;
-  armRElbow.rotation.x = elbowBend;
-  armLElbow.rotation.x = elbowBend;
-}
 
 /* ── Reset gallery ────────────────────────────────────────────────────────── */
 function resetGallery() {
@@ -3179,7 +3121,6 @@ function animate() {
   tickExplode(dt);
   tickDoorAnim(dt);
   tickHintDismiss(dt);
-  tickArms(dt);
   if (inMuseum) {
     roomCheckTimer += dt;
     if (roomCheckTimer > 0.25) { roomCheckTimer = 0; checkRoomLoading(); }
